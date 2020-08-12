@@ -31,17 +31,8 @@ namespace dxvk {
   VkCompareOp DecodeCompareOp(
           D3D11_COMPARISON_FUNC     Mode);
   
-  VkMemoryPropertyFlags GetMemoryFlagsForUsage(
-          D3D11_USAGE               Usage);
-  
   VkShaderStageFlagBits GetShaderStage(
           DxbcProgramType           ProgramType);
-  
-  VkBufferUsageFlags GetBufferUsageFlags(
-          UINT                      BindFlags);
-  
-  VkImageUsageFlags GetImageUsageFlags(
-          UINT                      BindFlags);
   
   VkFormatFeatureFlags GetBufferFormatFeatures(
           UINT                      BindFlags);

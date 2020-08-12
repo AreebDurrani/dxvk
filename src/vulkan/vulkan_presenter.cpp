@@ -11,6 +11,14 @@ namespace dxvk::vk {
           PresenterDevice device,
     const PresenterDesc&  desc)
   : m_vki(vki), m_vkd(vkd), m_device(device), m_window(window) {
+    // As of Wine 5.9, winevulkan provides this extension, but does
+    // not filter the pNext chain for VkSwapchainCreateInfoKHR properly
+    // before passing it to the Linux sude, which breaks RenderDoc.
+    if (::GetModuleHandle("winevulkan.dll")) {
+      Logger::warn("winevulkan detected, disabling exclusive fullscreen support");
+      m_device.features.fullScreenExclusive = false;
+    }
+
     if (createSurface() != VK_SUCCESS)
       throw DxvkError("Failed to create surface");
 
@@ -119,10 +127,10 @@ namespace dxvk::vk {
         return status;
     }
 
-    if ((status = getSupportedFormats(formats)) != VK_SUCCESS)
+    if ((status = getSupportedFormats(formats, desc)) != VK_SUCCESS)
       return status;
 
-    if ((status = getSupportedPresentModes(modes)) != VK_SUCCESS)
+    if ((status = getSupportedPresentModes(modes, desc)) != VK_SUCCESS)
       return status;
 
     // Select actual swap chain properties and create swap chain
@@ -130,6 +138,17 @@ namespace dxvk::vk {
     m_info.presentMode  = pickPresentMode(modes.size(), modes.data(), desc.numPresentModes, desc.presentModes);
     m_info.imageExtent  = pickImageExtent(caps, desc.imageExtent);
     m_info.imageCount   = pickImageCount(caps, m_info.presentMode, desc.imageCount);
+
+    if (!m_info.imageExtent.width || !m_info.imageExtent.height) {
+      m_info.imageCount = 0;
+      m_info.format     = { VK_FORMAT_UNDEFINED, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
+      return VK_SUCCESS;
+    }
+
+    VkSurfaceFullScreenExclusiveInfoEXT fullScreenInfo;
+    fullScreenInfo.sType            = VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT;
+    fullScreenInfo.pNext            = nullptr;
+    fullScreenInfo.fullScreenExclusive = desc.fullScreenExclusive;
 
     VkSwapchainCreateInfoKHR swapInfo;
     swapInfo.sType                  = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
@@ -152,12 +171,16 @@ namespace dxvk::vk {
     swapInfo.clipped                = VK_TRUE;
     swapInfo.oldSwapchain           = VK_NULL_HANDLE;
 
+    if (m_device.features.fullScreenExclusive)
+      swapInfo.pNext = &fullScreenInfo;
+
     Logger::info(str::format(
       "Presenter: Actual swap chain properties:"
       "\n  Format:       ", m_info.format.format,
       "\n  Present mode: ", m_info.presentMode,
       "\n  Buffer size:  ", m_info.imageExtent.width, "x", m_info.imageExtent.height,
-      "\n  Image count:  ", m_info.imageCount));
+      "\n  Image count:  ", m_info.imageCount,
+      "\n  Exclusive FS: ", desc.fullScreenExclusive));
     
     if ((status = m_vkd->vkCreateSwapchainKHR(m_vkd->device(),
         &swapInfo, nullptr, &m_swapchain)) != VK_SUCCESS)
@@ -198,7 +221,7 @@ namespace dxvk::vk {
     // Create one set of semaphores per swap image
     m_semaphores.resize(m_info.imageCount);
 
-    for (uint32_t i = 0; i < m_info.imageCount; i++) {
+    for (uint32_t i = 0; i < m_semaphores.size(); i++) {
       VkFenceCreateInfo fenceInfo;
       fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
       fenceInfo.pNext = nullptr;
@@ -229,35 +252,89 @@ namespace dxvk::vk {
   }
 
 
-  VkResult Presenter::getSupportedFormats(std::vector<VkSurfaceFormatKHR>& formats) {
+  VkResult Presenter::getSupportedFormats(std::vector<VkSurfaceFormatKHR>& formats, const PresenterDesc& desc) {
     uint32_t numFormats = 0;
 
-    VkResult status = m_vki->vkGetPhysicalDeviceSurfaceFormatsKHR(
-      m_device.adapter, m_surface, &numFormats, nullptr);
+    VkSurfaceFullScreenExclusiveInfoEXT fullScreenInfo;
+    fullScreenInfo.sType = VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT;
+    fullScreenInfo.pNext = nullptr;
+    fullScreenInfo.fullScreenExclusive = desc.fullScreenExclusive;
+
+    VkPhysicalDeviceSurfaceInfo2KHR surfaceInfo;
+    surfaceInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR;
+    surfaceInfo.pNext = &fullScreenInfo;
+    surfaceInfo.surface = m_surface;
+
+    VkResult status;
+    
+    if (m_device.features.fullScreenExclusive) {
+      status = m_vki->vkGetPhysicalDeviceSurfaceFormats2KHR(
+        m_device.adapter, &surfaceInfo, &numFormats, nullptr);
+    } else {
+      status = m_vki->vkGetPhysicalDeviceSurfaceFormatsKHR(
+        m_device.adapter, m_surface, &numFormats, nullptr);
+    }
 
     if (status != VK_SUCCESS)
       return status;
     
     formats.resize(numFormats);
 
-    return m_vki->vkGetPhysicalDeviceSurfaceFormatsKHR(
-      m_device.adapter, m_surface, &numFormats, formats.data());
+    if (m_device.features.fullScreenExclusive) {
+      std::vector<VkSurfaceFormat2KHR> tmpFormats(numFormats, 
+        { VK_STRUCTURE_TYPE_SURFACE_FORMAT_2_KHR, nullptr, VkSurfaceFormatKHR() });
+
+      status = m_vki->vkGetPhysicalDeviceSurfaceFormats2KHR(
+        m_device.adapter, &surfaceInfo, &numFormats, tmpFormats.data());
+
+      for (uint32_t i = 0; i < numFormats; i++)
+        formats[i] = tmpFormats[i].surfaceFormat;
+    } else {
+      status = m_vki->vkGetPhysicalDeviceSurfaceFormatsKHR(
+        m_device.adapter, m_surface, &numFormats, formats.data());
+    }
+
+    return status;
   }
 
   
-  VkResult Presenter::getSupportedPresentModes(std::vector<VkPresentModeKHR>& modes) {
+  VkResult Presenter::getSupportedPresentModes(std::vector<VkPresentModeKHR>& modes, const PresenterDesc& desc) {
     uint32_t numModes = 0;
 
-    VkResult status = m_vki->vkGetPhysicalDeviceSurfacePresentModesKHR(
-      m_device.adapter, m_surface, &numModes, nullptr);
+    VkSurfaceFullScreenExclusiveInfoEXT fullScreenInfo;
+    fullScreenInfo.sType = VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT;
+    fullScreenInfo.pNext = nullptr;
+    fullScreenInfo.fullScreenExclusive = desc.fullScreenExclusive;
+
+    VkPhysicalDeviceSurfaceInfo2KHR surfaceInfo;
+    surfaceInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR;
+    surfaceInfo.pNext = &fullScreenInfo;
+    surfaceInfo.surface = m_surface;
+
+    VkResult status;
+
+    if (m_device.features.fullScreenExclusive) {
+      status = m_vki->vkGetPhysicalDeviceSurfacePresentModes2EXT(
+        m_device.adapter, &surfaceInfo, &numModes, nullptr);
+    } else {
+      status = m_vki->vkGetPhysicalDeviceSurfacePresentModesKHR(
+        m_device.adapter, m_surface, &numModes, nullptr);
+    }
 
     if (status != VK_SUCCESS)
       return status;
     
     modes.resize(numModes);
 
-    return m_vki->vkGetPhysicalDeviceSurfacePresentModesKHR(
-      m_device.adapter, m_surface, &numModes, modes.data());
+    if (m_device.features.fullScreenExclusive) {
+      status = m_vki->vkGetPhysicalDeviceSurfacePresentModes2EXT(
+        m_device.adapter, &surfaceInfo, &numModes, modes.data());
+    } else {
+      status = m_vki->vkGetPhysicalDeviceSurfacePresentModesKHR(
+        m_device.adapter, m_surface, &numModes, modes.data());
+    }
+
+    return status;
   }
 
 
@@ -399,8 +476,6 @@ namespace dxvk::vk {
 
 
   void Presenter::destroySwapchain() {
-    m_vkd->vkDeviceWaitIdle(m_vkd->device());
-
     for (const auto& img : m_images)
       m_vkd->vkDestroyImageView(m_vkd->device(), img.view, nullptr);
     

@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "dxvk_bind_mask.h"
+#include "dxvk_graphics_state.h"
 #include "dxvk_pipecache.h"
 #include "dxvk_pipelayout.h"
 #include "dxvk_resource.h"
@@ -16,13 +17,62 @@ namespace dxvk {
   class DxvkPipelineManager;
   
   /**
-   * \brief Compute pipeline state info
+   * \brief Shaders used in compute pipelines
    */
-  struct DxvkComputePipelineStateInfo {
-    bool operator == (const DxvkComputePipelineStateInfo& other) const;
-    bool operator != (const DxvkComputePipelineStateInfo& other) const;
-    
-    DxvkBindingMask bsBindingMask;
+  struct DxvkComputePipelineShaders {
+    Rc<DxvkShader> cs;
+
+    bool eq(const DxvkComputePipelineShaders& other) const {
+      return cs == other.cs;
+    }
+
+    size_t hash() const {
+      return DxvkShader::getHash(cs);
+    }
+  };
+
+
+  /**
+   * \brief Compute pipeline instance
+   */
+  class DxvkComputePipelineInstance {
+
+  public:
+
+    DxvkComputePipelineInstance()
+    : m_stateVector (),
+      m_pipeline    (VK_NULL_HANDLE) { }
+
+    DxvkComputePipelineInstance(
+      const DxvkComputePipelineStateInfo& state,
+            VkPipeline                    pipe)
+    : m_stateVector (state),
+      m_pipeline    (pipe) { }
+
+    /**
+     * \brief Checks for matching pipeline state
+     * 
+     * \param [in] stateVector Graphics pipeline state
+     * \param [in] renderPass Render pass handle
+     * \returns \c true if the specialization is compatible
+     */
+    bool isCompatible(const DxvkComputePipelineStateInfo& state) const {
+      return m_stateVector == state;
+    }
+
+    /**
+     * \brief Retrieves pipeline
+     * \returns The pipeline handle
+     */
+    VkPipeline pipeline() const {
+      return m_pipeline;
+    }
+
+  private:
+
+    DxvkComputePipelineStateInfo m_stateVector;
+    VkPipeline                   m_pipeline;
+
   };
   
   
@@ -34,14 +84,23 @@ namespace dxvk {
    * pipelines do not need to be recompiled against any sort
    * of pipeline state.
    */
-  class DxvkComputePipeline : public DxvkResource {
+  class DxvkComputePipeline {
     
   public:
     
     DxvkComputePipeline(
-            DxvkPipelineManager*    pipeMgr,
-      const Rc<DxvkShader>&         cs);
+            DxvkPipelineManager*        pipeMgr,
+            DxvkComputePipelineShaders  shaders);
+
     ~DxvkComputePipeline();
+    
+    /**
+     * \brief Shaders used by the pipeline
+     * \returns Shaders used by the pipeline
+     */
+    const DxvkComputePipelineShaders& shaders() const {
+      return m_shaders;
+    }
     
     /**
      * \brief Pipeline layout
@@ -56,7 +115,7 @@ namespace dxvk {
     }
     
     /**
-     * \brief Pipeline handle
+     * \brief Retrieves pipeline handle
      * 
      * \param [in] state Pipeline state
      * \returns Pipeline handle
@@ -64,33 +123,37 @@ namespace dxvk {
     VkPipeline getPipelineHandle(
       const DxvkComputePipelineStateInfo& state);
     
+    /**
+     * \brief Compiles a pipeline
+     * 
+     * Asynchronously compiles the given pipeline
+     * and stores the result for future use.
+     * \param [in] state Pipeline state
+     */
+    void compilePipeline(
+      const DxvkComputePipelineStateInfo& state);
+    
   private:
     
-    struct PipelineStruct {
-      DxvkComputePipelineStateInfo stateVector;
-      VkPipeline                   pipeline;
-    };
-    
-    Rc<vk::DeviceFn>          m_vkd;
-    DxvkPipelineManager*      m_pipeMgr;
+    Rc<vk::DeviceFn>            m_vkd;
+    DxvkPipelineManager*        m_pipeMgr;
 
-    DxvkDescriptorSlotMapping m_slotMapping;
+    DxvkComputePipelineShaders  m_shaders;
+    DxvkDescriptorSlotMapping   m_slotMapping;
     
-    Rc<DxvkShader>            m_cs;
-    Rc<DxvkPipelineLayout>    m_layout;
+    Rc<DxvkPipelineLayout>      m_layout;
     
-    sync::Spinlock              m_mutex;
-    std::vector<PipelineStruct> m_pipelines;
+    sync::Spinlock                           m_mutex;
+    std::vector<DxvkComputePipelineInstance> m_pipelines;
     
-    VkPipeline m_basePipeline = VK_NULL_HANDLE;
+    DxvkComputePipelineInstance* createInstance(
+      const DxvkComputePipelineStateInfo& state);
     
-    bool findPipeline(
-      const DxvkComputePipelineStateInfo& state,
-            VkPipeline&                   pipeline) const;
+    DxvkComputePipelineInstance* findInstance(
+      const DxvkComputePipelineStateInfo& state);
     
-    VkPipeline compilePipeline(
-      const DxvkComputePipelineStateInfo& state,
-            VkPipeline                    baseHandle) const;
+    VkPipeline createPipeline(
+      const DxvkComputePipelineStateInfo& state) const;
     
     void destroyPipeline(
             VkPipeline                    pipeline);

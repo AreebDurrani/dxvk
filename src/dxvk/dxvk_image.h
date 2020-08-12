@@ -7,6 +7,8 @@
 #include "dxvk_util.h"
 
 namespace dxvk {
+
+  class DxvkImageView;
   
   /**
    * \brief Image create info
@@ -52,6 +54,9 @@ namespace dxvk {
     /// Common image layout
     VkImageLayout layout;
 
+    // Initial image layout
+    VkImageLayout initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
     // Image view formats that can
     // be used with this image
     uint32_t        viewFormatCount = 0;
@@ -91,6 +96,15 @@ namespace dxvk {
       VK_COMPONENT_SWIZZLE_IDENTITY,
     };
   };
+
+
+  /**
+   * \brief Stores an image and its memory slice.
+   */
+  struct DxvkPhysicalImage {
+    VkImage     image = VK_NULL_HANDLE;
+    DxvkMemory  memory;
+  };
   
   
   /**
@@ -101,7 +115,8 @@ namespace dxvk {
    * memory type and if created with the linear tiling option.
    */
   class DxvkImage : public DxvkResource {
-    
+    friend class DxvkContext;
+    friend class DxvkImageView;
   public:
     
     DxvkImage(
@@ -138,7 +153,7 @@ namespace dxvk {
      * \returns Image handle
      */
     VkImage handle() const {
-      return m_image;
+      return m_image.image;
     }
     
     /**
@@ -172,7 +187,7 @@ namespace dxvk {
      * \returns Pointer to mapped memory region
      */
     void* mapPtr(VkDeviceSize offset) const {
-      return m_memory.mapPtr(offset);
+      return m_image.memory.mapPtr(offset);
     }
     
     /**
@@ -190,11 +205,7 @@ namespace dxvk {
      * \returns Size of that level
      */
     VkExtent3D mipLevelExtent(uint32_t level) const {
-      VkExtent3D size = m_info.extent;
-      size.width  = std::max(1u, size.width  >> level);
-      size.height = std::max(1u, size.height >> level);
-      size.depth  = std::max(1u, size.depth  >> level);
-      return size;
+      return util::computeMipLevelExtent(m_info.extent, level);
     }
     
     /**
@@ -209,7 +220,7 @@ namespace dxvk {
       const VkImageSubresource& subresource) const {
       VkSubresourceLayout result;
       m_vkd->vkGetImageSubresourceLayout(
-        m_vkd->device(), m_image,
+        m_vkd->device(), m_image.image,
         &subresource, &result);
       return result;
     }
@@ -225,6 +236,14 @@ namespace dxvk {
     VkImageLayout pickLayout(VkImageLayout layout) const {
       return m_info.layout == VK_IMAGE_LAYOUT_GENERAL
         ? VK_IMAGE_LAYOUT_GENERAL : layout;
+    }
+
+    /**
+     * \brief Changes image layout
+     * \param [in] layout New layout
+     */
+    void setLayout(VkImageLayout layout) {
+      m_info.layout = layout;
     }
 
     /**
@@ -256,16 +275,24 @@ namespace dxvk {
         result |= m_viewFormats[i] == format;
       return result;
     }
+
+    /**
+     * \brief Memory size
+     * 
+     * \returns The memory size of the image
+     */
+    VkDeviceSize memSize() const {
+      return m_image.memory.length();
+    }
     
   private:
     
     Rc<vk::DeviceFn>      m_vkd;
     DxvkImageCreateInfo   m_info;
     VkMemoryPropertyFlags m_memFlags;
-    DxvkMemory            m_memory;
-    VkImage               m_image = VK_NULL_HANDLE;
+    DxvkPhysicalImage     m_image;
 
-    std::vector<VkFormat> m_viewFormats;
+    small_vector<VkFormat, 4> m_viewFormats;
     
   };
   
@@ -274,6 +301,7 @@ namespace dxvk {
    * \brief DXVK image view
    */
   class DxvkImageView : public DxvkResource {
+    friend class DxvkImage;
     constexpr static uint32_t ViewCount = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY + 1;
   public:
     
@@ -305,6 +333,8 @@ namespace dxvk {
      * \returns The image view handle
      */
     VkImageView handle(VkImageViewType viewType) const {
+      if (unlikely(viewType == VK_IMAGE_VIEW_TYPE_MAX_ENUM))
+        viewType = m_info.type;
       return m_views[viewType];
     }
     
@@ -344,19 +374,19 @@ namespace dxvk {
     }
     
     /**
-     * \brief Image format info
-     * \returns Image format info
-     */
-    const DxvkFormatInfo* formatInfo() const {
-      return m_image->formatInfo();
-    }
-    
-    /**
      * \brief Image object
      * \returns Image object
      */
     const Rc<DxvkImage>& image() const {
       return m_image;
+    }
+    
+    /**
+     * \brief View format info
+     * \returns View format info
+     */
+    const DxvkFormatInfo* formatInfo() const {
+      return imageFormatInfo(m_info.format);
     }
     
     /**

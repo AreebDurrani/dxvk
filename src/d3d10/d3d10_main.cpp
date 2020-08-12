@@ -12,46 +12,108 @@ namespace dxvk {
 extern "C" {
   using namespace dxvk;
 
-  HRESULT __stdcall D3D11CoreCreateDevice(
-          IDXGIFactory*       pFactory,
-          IDXGIAdapter*       pAdapter,
-          UINT                Flags,
-    const D3D_FEATURE_LEVEL*  pFeatureLevels,
-          UINT                FeatureLevels,
-          ID3D11Device**      ppDevice);
-
-
-  DLLEXPORT HRESULT __stdcall D3D10CoreCreateDevice(
+  HRESULT __stdcall D3D10CoreCreateDevice(
           IDXGIFactory*           pFactory,
           IDXGIAdapter*           pAdapter,
           UINT                    Flags,
           D3D_FEATURE_LEVEL       FeatureLevel,
-          ID3D10Device**          ppDevice) {
+          ID3D10Device**          ppDevice);
+
+  static HRESULT D3D10InternalCreateDeviceAndSwapChain(
+          IDXGIAdapter*           pAdapter,
+          D3D10_DRIVER_TYPE       DriverType,
+          HMODULE                 Software,
+          UINT                    Flags,
+          D3D10_FEATURE_LEVEL1    HardwareLevel,
+          UINT                    SDKVersion,
+          DXGI_SWAP_CHAIN_DESC*   pSwapChainDesc,
+          IDXGISwapChain**        ppSwapChain,
+          REFIID                  deviceIID,
+          void**                  ppDevice) {
     InitReturnPtr(ppDevice);
+    InitReturnPtr(ppSwapChain);
 
-    Com<ID3D11Device> d3d11Device;
+    if (ppSwapChain && !pSwapChainDesc)
+      return E_INVALIDARG;
+    
+    HRESULT hr;
+    
+    // Get DXGI factory and adapter. This is mostly
+    // copied from the equivalent D3D11 functions.
+    Com<IDXGIFactory> dxgiFactory = nullptr;
+    Com<IDXGIAdapter> dxgiAdapter = pAdapter;
+    Com<ID3D10Device> device      = nullptr;
+    
+    if (!pAdapter) {
+      if (DriverType != D3D10_DRIVER_TYPE_HARDWARE)
+        Logger::warn("D3D10CreateDevice: Unsupported driver type");
+      
+      hr = CreateDXGIFactory(__uuidof(IDXGIFactory), reinterpret_cast<void**>(&dxgiFactory));
 
-    HRESULT hr = pAdapter->CheckInterfaceSupport(
-      __uuidof(ID3D10Device), nullptr);
+      if (FAILED(hr)) {
+        Logger::err("D3D10CreateDevice: Failed to create a DXGI factory");
+        return hr;
+      }
+
+      hr = dxgiFactory->EnumAdapters(0, &dxgiAdapter);
+
+      if (FAILED(hr)) {
+        Logger::err("D3D10CreateDevice: No default adapter available");
+        return hr;
+      }
+    } else {
+      if (FAILED(dxgiAdapter->GetParent(__uuidof(IDXGIFactory), reinterpret_cast<void**>(&dxgiFactory)))) {
+        Logger::err("D3D10CreateDevice: Failed to query DXGI factory from DXGI adapter");
+        return E_INVALIDARG;
+      }
+      
+      if (DriverType != D3D10_DRIVER_TYPE_HARDWARE || Software)
+        return E_INVALIDARG;
+    }
+
+    hr = D3D10CoreCreateDevice(
+      dxgiFactory.ptr(), dxgiAdapter.ptr(),
+      Flags, D3D_FEATURE_LEVEL(HardwareLevel),
+      &device);
     
     if (FAILED(hr))
       return hr;
-
-    hr = D3D11CoreCreateDevice(pFactory, pAdapter,
-      Flags, &FeatureLevel, 1, &d3d11Device);
-
-    if (FAILED(hr))
-      return hr;
     
-    Com<ID3D10Multithread> multithread;
-    d3d11Device->QueryInterface(__uuidof(ID3D10Multithread), reinterpret_cast<void**>(&multithread));
-    multithread->SetMultithreadProtected(!(Flags & D3D10_CREATE_DEVICE_SINGLETHREADED));
+    if (ppSwapChain) {
+      DXGI_SWAP_CHAIN_DESC desc = *pSwapChainDesc;
+      hr = dxgiFactory->CreateSwapChain(device.ptr(), &desc, ppSwapChain);
+
+      if (FAILED(hr)) {
+        Logger::err("D3D10CreateDevice: Failed to create swap chain");
+        return hr;
+      }
+    }
+
+    if (ppDevice) {
+      // Just assume that this succeeds
+      device->QueryInterface(deviceIID, ppDevice);
+    }
     
-    if (FAILED(d3d11Device->QueryInterface(
-        __uuidof(ID3D10Device), reinterpret_cast<void**>(ppDevice))))
-      return E_FAIL;
+    if (!ppDevice && !ppSwapChain)
+      return S_FALSE;
     
     return S_OK;
+  }
+
+
+  DLLEXPORT HRESULT __stdcall D3D10CreateDevice(
+          IDXGIAdapter*           pAdapter,
+          D3D10_DRIVER_TYPE       DriverType,
+          HMODULE                 Software,
+          UINT                    Flags,
+          UINT                    SDKVersion,
+          ID3D10Device**          ppDevice) {
+    return D3D10InternalCreateDeviceAndSwapChain(
+      pAdapter, DriverType, Software, Flags,
+      D3D10_FEATURE_LEVEL_10_0, SDKVersion,
+      nullptr, nullptr,
+      __uuidof(ID3D10Device),
+      reinterpret_cast<void**>(ppDevice));
   }
 
 
@@ -63,81 +125,30 @@ extern "C" {
           D3D10_FEATURE_LEVEL1    HardwareLevel,
           UINT                    SDKVersion,
           ID3D10Device1**         ppDevice) {
-    InitReturnPtr(ppDevice);
-
-    // Get DXGI factory and adapter. This is mostly
-    // copied from the equivalent D3D11 functions.
-    Com<IDXGIFactory> dxgiFactory = nullptr;
-    Com<IDXGIAdapter> dxgiAdapter = pAdapter;
-
-    if (dxgiAdapter == nullptr) {
-      if (DriverType != D3D10_DRIVER_TYPE_HARDWARE)
-        Logger::warn("D3D10CreateDevice: Unsupported driver type");
-      
-      if (FAILED(CreateDXGIFactory(__uuidof(IDXGIFactory), reinterpret_cast<void**>(&dxgiFactory)))) {
-        Logger::err("D3D10CreateDevice: Failed to create a DXGI factory");
-        return E_FAIL;
-      }
-      
-      if (FAILED(dxgiFactory->EnumAdapters(0, &dxgiAdapter))) {
-        Logger::err("D3D10CreateDevice: No default adapter available");
-        return E_FAIL;
-      }
-      
-    } else {
-      if (FAILED(dxgiAdapter->GetParent(__uuidof(IDXGIFactory), reinterpret_cast<void**>(&dxgiFactory)))) {
-        Logger::err("D3D10CreateDevice: Failed to query DXGI factory from DXGI adapter");
-        return E_FAIL;
-      }
-      
-      if (DriverType != D3D10_DRIVER_TYPE_HARDWARE || Software != nullptr)
-        return E_INVALIDARG;
-    }
-
-    // Create the actual device
-    Com<ID3D10Device> device;
-
-    HRESULT hr = D3D10CoreCreateDevice(
-      dxgiFactory.ptr(), dxgiAdapter.ptr(),
-      Flags, D3D_FEATURE_LEVEL(HardwareLevel),
-      &device);
-    
-    if (FAILED(hr))
-      return hr;
-    
-    hr = device->QueryInterface(
+    return D3D10InternalCreateDeviceAndSwapChain(
+      pAdapter, DriverType, Software, Flags,
+      HardwareLevel, SDKVersion,
+      nullptr, nullptr,
       __uuidof(ID3D10Device1),
       reinterpret_cast<void**>(ppDevice));
-    
-    if (FAILED(hr))
-      return E_FAIL;
-    
-    return hr;
   }
 
 
-  DLLEXPORT HRESULT __stdcall D3D10CreateDevice(
+  DLLEXPORT HRESULT __stdcall D3D10CreateDeviceAndSwapChain(
           IDXGIAdapter*           pAdapter,
           D3D10_DRIVER_TYPE       DriverType,
           HMODULE                 Software,
           UINT                    Flags,
           UINT                    SDKVersion,
+          DXGI_SWAP_CHAIN_DESC*   pSwapChainDesc,
+          IDXGISwapChain**        ppSwapChain,
           ID3D10Device**          ppDevice) {
-    InitReturnPtr(ppDevice);
-
-    Com<ID3D10Device1> d3d10Device = nullptr;
-    HRESULT hr = D3D10CreateDevice1(pAdapter,
-      DriverType, Software, Flags,
-      D3D10_FEATURE_LEVEL_10_0,
-      SDKVersion, &d3d10Device);
-    
-    if (FAILED(hr))
-      return hr;
-    
-    if (ppDevice != nullptr) {
-      *ppDevice = d3d10Device.ref();
-      return S_OK;
-    } return S_FALSE;
+    return D3D10InternalCreateDeviceAndSwapChain(
+      pAdapter, DriverType, Software, Flags,
+      D3D10_FEATURE_LEVEL_10_0, SDKVersion,
+      pSwapChainDesc, ppSwapChain,
+      __uuidof(ID3D10Device),
+      reinterpret_cast<void**>(ppDevice));
   }
 
 
@@ -151,80 +162,12 @@ extern "C" {
           DXGI_SWAP_CHAIN_DESC*   pSwapChainDesc,
           IDXGISwapChain**        ppSwapChain,
           ID3D10Device1**         ppDevice) {
-    InitReturnPtr(ppDevice);
-    InitReturnPtr(ppSwapChain);
-
-    if (ppSwapChain && !pSwapChainDesc)
-      return E_INVALIDARG;
-    
-    // Try to create the device as usual
-    Com<ID3D10Device1> d3d10Device = nullptr;
-    HRESULT hr = D3D10CreateDevice1(pAdapter,
-      DriverType, Software, Flags, HardwareLevel,
-      SDKVersion, &d3d10Device);
-    
-    if (FAILED(hr))
-      return hr;
-
-    // Create the swap chain if requested
-    if (ppSwapChain) {
-      Com<IDXGIDevice>  dxgiDevice  = nullptr;
-      Com<IDXGIAdapter> dxgiAdapter = nullptr;
-      Com<IDXGIFactory> dxgiFactory = nullptr;
-
-      if (FAILED(d3d10Device->QueryInterface(__uuidof(IDXGIDevice), reinterpret_cast<void**>(&dxgiDevice)))) {
-        Logger::err("D3D11CreateDeviceAndSwapChain: Failed to query DXGI device");
-        return E_FAIL;
-      }
-      
-      if (FAILED(dxgiDevice->GetParent(__uuidof(IDXGIAdapter), reinterpret_cast<void**>(&dxgiAdapter)))) {
-        Logger::err("D3D11CreateDeviceAndSwapChain: Failed to query DXGI adapter");
-        return E_FAIL;
-      }
-      
-      if (FAILED(dxgiAdapter->GetParent(__uuidof(IDXGIFactory), reinterpret_cast<void**>(&dxgiFactory)))) {
-        Logger::err("D3D11CreateDeviceAndSwapChain: Failed to query DXGI factory");
-        return E_FAIL;
-      }
-      
-      if (FAILED(dxgiFactory->CreateSwapChain(d3d10Device.ptr(), pSwapChainDesc, ppSwapChain))) {
-        Logger::err("D3D11CreateDeviceAndSwapChain: Failed to create swap chain");
-        return E_FAIL;
-      }
-    }
-
-    // Write back device pointer
-    if (ppDevice != nullptr) {
-      *ppDevice = d3d10Device.ptr();
-      return S_OK;
-    } return S_FALSE;
-  }
-
-
-  DLLEXPORT HRESULT __stdcall D3D10CreateDeviceAndSwapChain(
-          IDXGIAdapter*           pAdapter,
-          D3D10_DRIVER_TYPE       DriverType,
-          HMODULE                 Software,
-          UINT                    Flags,
-          UINT                    SDKVersion,
-          DXGI_SWAP_CHAIN_DESC*   pSwapChainDesc,
-          IDXGISwapChain**        ppSwapChain,
-          ID3D10Device**          ppDevice) {
-    InitReturnPtr(ppDevice);
-    InitReturnPtr(ppSwapChain);
-
-    Com<ID3D10Device1> d3d10Device = nullptr;
-    HRESULT hr = D3D10CreateDeviceAndSwapChain1(pAdapter,
-      DriverType, Software, Flags, D3D10_FEATURE_LEVEL_10_0,
-      SDKVersion, pSwapChainDesc, ppSwapChain, &d3d10Device);
-    
-    if (FAILED(hr))
-      return hr;
-    
-    if (ppDevice != nullptr) {
-      *ppDevice = d3d10Device.ref();
-      return S_OK;
-    } return S_FALSE;
+    return D3D10InternalCreateDeviceAndSwapChain(
+      pAdapter, DriverType, Software, Flags,
+      HardwareLevel, SDKVersion,
+      pSwapChainDesc, ppSwapChain,
+      __uuidof(ID3D10Device1),
+      reinterpret_cast<void**>(ppDevice));
   }
 
 
@@ -375,6 +318,16 @@ extern "C" {
       pInclude,
       ppShaderText,
       ppErrorMsgs);
+  }
+
+
+  UINT64 STDMETHODCALLTYPE D3D10GetVersion() {
+    return 0xa000100041770ull;
+  }
+
+
+  HRESULT STDMETHODCALLTYPE D3D10RegisterLayers() {
+    return E_NOTIMPL;
   }
 
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "vulkan_loader_fn.h"
+#include "vulkan_loader.h"
 
 namespace dxvk::vk {
 
@@ -119,4 +119,30 @@ inline bool operator == (VkExtent2D a, VkExtent2D b) {
 inline bool operator != (VkExtent2D a, VkExtent2D b) {
   return a.width  != b.width
       || a.height != b.height;
+}
+
+
+inline bool operator == (VkOffset3D a, VkOffset3D b) {
+  return a.x == b.x
+      && a.y == b.y
+      && a.z == b.z;
+}
+
+
+inline bool operator != (VkOffset3D a, VkOffset3D b) {
+  return a.x != b.x
+      || a.y != b.y
+      || a.z != b.z;
+}
+
+
+inline bool operator == (VkOffset2D a, VkOffset2D b) {
+  return a.x == b.x
+      && a.y == b.y;
+}
+
+
+inline bool operator != (VkOffset2D a, VkOffset2D b) {
+  return a.x != b.x
+      || a.y != b.y;
 }

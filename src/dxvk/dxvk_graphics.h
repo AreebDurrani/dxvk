@@ -4,6 +4,7 @@
 
 #include "dxvk_bind_mask.h"
 #include "dxvk_constant_state.h"
+#include "dxvk_graphics_state.h"
 #include "dxvk_pipecache.h"
 #include "dxvk_pipelayout.h"
 #include "dxvk_renderpass.h"
@@ -21,96 +22,37 @@ namespace dxvk {
    */
   enum class DxvkGraphicsPipelineFlag {
     HasTransformFeedback,
-    HasFsStorageDescriptors,
-    HasVsStorageDescriptors,
+    HasStorageDescriptors,
   };
 
   using DxvkGraphicsPipelineFlags = Flags<DxvkGraphicsPipelineFlag>;
 
 
   /**
-   * \brief Graphics pipeline state info
-   * 
-   * Stores all information that is required to create
-   * a graphics pipeline, except the shader objects
-   * themselves. Also used to identify pipelines using
-   * the current pipeline state vector.
+   * \brief Shaders used in graphics pipelines
    */
-  struct DxvkGraphicsPipelineStateInfo {
-    DxvkGraphicsPipelineStateInfo();
-    DxvkGraphicsPipelineStateInfo(
-      const DxvkGraphicsPipelineStateInfo& other);
-    
-    DxvkGraphicsPipelineStateInfo& operator = (
-      const DxvkGraphicsPipelineStateInfo& other);
-    
-    bool operator == (const DxvkGraphicsPipelineStateInfo& other) const;
-    bool operator != (const DxvkGraphicsPipelineStateInfo& other) const;
+  struct DxvkGraphicsPipelineShaders {
+    Rc<DxvkShader> vs;
+    Rc<DxvkShader> tcs;
+    Rc<DxvkShader> tes;
+    Rc<DxvkShader> gs;
+    Rc<DxvkShader> fs;
 
-    bool useDynamicStencilRef() const {
-      return dsEnableStencilTest;
+    bool eq(const DxvkGraphicsPipelineShaders& other) const {
+      return vs == other.vs && tcs == other.tcs
+          && tes == other.tes && gs == other.gs
+          && fs == other.fs;
     }
 
-    bool useDynamicDepthBias() const {
-      return rsDepthBiasEnable;
+    size_t hash() const {
+      DxvkHashState state;
+      state.add(DxvkShader::getHash(vs));
+      state.add(DxvkShader::getHash(tcs));
+      state.add(DxvkShader::getHash(tes));
+      state.add(DxvkShader::getHash(gs));
+      state.add(DxvkShader::getHash(fs));
+      return state;
     }
-
-    bool useDynamicDepthBounds() const {
-      return dsEnableDepthBoundsTest;
-    }
-
-    bool useDynamicBlendConstants() const {
-      bool result = false;
-      
-      for (uint32_t i = 0; i < MaxNumRenderTargets && !result; i++) {
-        result |= omBlendAttachments[i].blendEnable
-         && (util::isBlendConstantBlendFactor(omBlendAttachments[i].srcColorBlendFactor)
-          || util::isBlendConstantBlendFactor(omBlendAttachments[i].dstColorBlendFactor)
-          || util::isBlendConstantBlendFactor(omBlendAttachments[i].srcAlphaBlendFactor)
-          || util::isBlendConstantBlendFactor(omBlendAttachments[i].dstAlphaBlendFactor));
-      }
-
-      return result;
-    }
-    
-    DxvkBindingMask                     bsBindingMask;
-    
-    VkPrimitiveTopology                 iaPrimitiveTopology;
-    VkBool32                            iaPrimitiveRestart;
-    uint32_t                            iaPatchVertexCount;
-    
-    uint32_t                            ilAttributeCount;
-    uint32_t                            ilBindingCount;
-    VkVertexInputAttributeDescription   ilAttributes[DxvkLimits::MaxNumVertexAttributes];
-    VkVertexInputBindingDescription     ilBindings[DxvkLimits::MaxNumVertexBindings];
-    uint32_t                            ilDivisors[DxvkLimits::MaxNumVertexBindings];
-    
-    VkBool32                            rsDepthClipEnable;
-    VkBool32                            rsDepthBiasEnable;
-    VkPolygonMode                       rsPolygonMode;
-    VkCullModeFlags                     rsCullMode;
-    VkFrontFace                         rsFrontFace;
-    uint32_t                            rsViewportCount;
-    VkSampleCountFlags                  rsSampleCount;
-    
-    VkSampleCountFlags                  msSampleCount;
-    uint32_t                            msSampleMask;
-    VkBool32                            msEnableAlphaToCoverage;
-    
-    VkBool32                            dsEnableDepthTest;
-    VkBool32                            dsEnableDepthWrite;
-    VkBool32                            dsEnableDepthBoundsTest;
-    VkBool32                            dsEnableStencilTest;
-    VkCompareOp                         dsDepthCompareOp;
-    VkStencilOpState                    dsStencilOpFront;
-    VkStencilOpState                    dsStencilOpBack;
-    
-    VkBool32                            omEnableLogicOp;
-    VkLogicOp                           omLogicOp;
-    VkPipelineColorBlendAttachmentState omBlendAttachments[MaxNumRenderTargets];
-    VkComponentMapping                  omComponentMapping[MaxNumRenderTargets];
-
-    uint32_t                            scSpecConstants[MaxNumSpecConstants];
   };
   
   
@@ -136,10 +78,14 @@ namespace dxvk {
 
   public:
 
-    DxvkGraphicsPipelineInstance() { }
+    DxvkGraphicsPipelineInstance()
+    : m_stateVector (),
+      m_renderPass  (VK_NULL_HANDLE),
+      m_pipeline    (VK_NULL_HANDLE) { }
+
     DxvkGraphicsPipelineInstance(
       const DxvkGraphicsPipelineStateInfo&  state,
-            VkRenderPass                    rp,
+      const DxvkRenderPass*                 rp,
             VkPipeline                      pipe)
     : m_stateVector (state),
       m_renderPass  (rp),
@@ -154,9 +100,9 @@ namespace dxvk {
      */
     bool isCompatible(
       const DxvkGraphicsPipelineStateInfo&  state,
-            VkRenderPass                    rp) const {
-      return m_stateVector == state
-          && m_renderPass  == rp;
+      const DxvkRenderPass*                 rp) {
+      return m_renderPass  == rp
+          && m_stateVector == state;
     }
 
     /**
@@ -170,7 +116,7 @@ namespace dxvk {
   private:
 
     DxvkGraphicsPipelineStateInfo m_stateVector;
-    VkRenderPass                  m_renderPass;
+    const DxvkRenderPass*         m_renderPass;
     VkPipeline                    m_pipeline;
 
   };
@@ -183,18 +129,23 @@ namespace dxvk {
    * recompile the graphics pipeline against a given
    * pipeline state vector.
    */
-  class DxvkGraphicsPipeline : public DxvkResource {
+  class DxvkGraphicsPipeline {
     
   public:
     
     DxvkGraphicsPipeline(
-            DxvkPipelineManager*      pipeMgr,
-      const Rc<DxvkShader>&           vs,
-      const Rc<DxvkShader>&           tcs,
-      const Rc<DxvkShader>&           tes,
-      const Rc<DxvkShader>&           gs,
-      const Rc<DxvkShader>&           fs);
+            DxvkPipelineManager*        pipeMgr,
+            DxvkGraphicsPipelineShaders shaders);
+
     ~DxvkGraphicsPipeline();
+
+    /**
+     * \brief Shaders used by the pipeline
+     * \returns Shaders used by the pipeline
+     */
+    const DxvkGraphicsPipelineShaders& shaders() const {
+      return m_shaders;
+    }
     
     /**
      * \brief Returns graphics pipeline flags
@@ -238,27 +189,29 @@ namespace dxvk {
      */
     VkPipeline getPipelineHandle(
       const DxvkGraphicsPipelineStateInfo&    state,
-      const DxvkRenderPass&                   renderPass);
+      const DxvkRenderPass*                   renderPass);
+    
+    /**
+     * \brief Compiles a pipeline
+     * 
+     * Asynchronously compiles the given pipeline
+     * and stores the result for future use.
+     * \param [in] state Pipeline state vector
+     * \param [in] renderPass The render pass
+     */
+    void compilePipeline(
+      const DxvkGraphicsPipelineStateInfo&    state,
+      const DxvkRenderPass*                   renderPass);
     
   private:
     
-    struct PipelineStruct {
-      DxvkGraphicsPipelineStateInfo stateVector;
-      VkRenderPass                  renderPass;
-      VkPipeline                    pipeline;
-    };
-    
-    Rc<vk::DeviceFn>          m_vkd;
-    DxvkPipelineManager*      m_pipeMgr;
+    Rc<vk::DeviceFn>            m_vkd;
+    DxvkPipelineManager*        m_pipeMgr;
 
-    DxvkDescriptorSlotMapping m_slotMapping;
+    DxvkGraphicsPipelineShaders m_shaders;
+    DxvkDescriptorSlotMapping   m_slotMapping;
 
-    Rc<DxvkShader>            m_vs;
-    Rc<DxvkShader>            m_tcs;
-    Rc<DxvkShader>            m_tes;
-    Rc<DxvkShader>            m_gs;
-    Rc<DxvkShader>            m_fs;
-    Rc<DxvkPipelineLayout>    m_layout;
+    Rc<DxvkPipelineLayout>      m_layout;
     
     uint32_t m_vsIn  = 0;
     uint32_t m_fsOut = 0;
@@ -270,25 +223,28 @@ namespace dxvk {
     alignas(CACHE_LINE_SIZE) sync::Spinlock   m_mutex;
     std::vector<DxvkGraphicsPipelineInstance> m_pipelines;
     
-    // Pipeline handles used for derivative pipelines
-    VkPipeline m_basePipeline = VK_NULL_HANDLE;
-    
-    const DxvkGraphicsPipelineInstance* findInstance(
+    DxvkGraphicsPipelineInstance* createInstance(
       const DxvkGraphicsPipelineStateInfo& state,
-            VkRenderPass                   renderPass) const;
+      const DxvkRenderPass*                renderPass);
     
-    VkPipeline compilePipeline(
+    DxvkGraphicsPipelineInstance* findInstance(
       const DxvkGraphicsPipelineStateInfo& state,
-      const DxvkRenderPass&                renderPass,
-            VkPipeline                     baseHandle) const;
+      const DxvkRenderPass*                renderPass);
+    
+    VkPipeline createPipeline(
+      const DxvkGraphicsPipelineStateInfo& state,
+      const DxvkRenderPass*                renderPass) const;
     
     void destroyPipeline(
             VkPipeline                     pipeline) const;
     
     DxvkShaderModule createShaderModule(
       const Rc<DxvkShader>&                shader,
-      const DxvkShaderModuleCreateInfo&    info) const;
+      const DxvkGraphicsPipelineStateInfo& state) const;
     
+    Rc<DxvkShader> getPrevStageShader(
+            VkShaderStageFlagBits          stage) const;
+
     bool validatePipelineState(
       const DxvkGraphicsPipelineStateInfo& state) const;
     
@@ -299,7 +255,7 @@ namespace dxvk {
     void logPipelineState(
             LogLevel                       level,
       const DxvkGraphicsPipelineStateInfo& state) const;
-    
+
   };
   
 }

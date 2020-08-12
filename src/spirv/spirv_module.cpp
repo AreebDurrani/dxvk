@@ -4,7 +4,8 @@
 
 namespace dxvk {
   
-  SpirvModule:: SpirvModule() {
+  SpirvModule::SpirvModule(uint32_t version)
+  : m_version(version) {
     this->instImportGlsl450();
   }
   
@@ -16,7 +17,7 @@ namespace dxvk {
   
   SpirvCodeBuffer SpirvModule::compile() const {
     SpirvCodeBuffer result;
-    result.putHeader(m_id);
+    result.putHeader(m_version, m_id);
     result.append(m_capabilities);
     result.append(m_extensions);
     result.append(m_instExt);
@@ -278,6 +279,23 @@ namespace dxvk {
     
     return this->constComposite(vectorTypeId, args.size(), args.data());
   }
+
+
+  uint32_t SpirvModule::constvec4b32(
+          bool                    x,
+          bool                    y,
+          bool                    z,
+          bool                    w) {
+    std::array<uint32_t, 4> args = {{
+      this->constBool(x), this->constBool(y),
+      this->constBool(z), this->constBool(w),
+    }};
+    
+    uint32_t scalarTypeId = this->defBoolType();
+    uint32_t vectorTypeId = this->defVectorType(scalarTypeId, 4);
+    
+    return this->constComposite(vectorTypeId, args.size(), args.data());
+  }
   
   
   uint32_t SpirvModule::constvec4u32(
@@ -342,6 +360,78 @@ namespace dxvk {
     
     return this->constComposite(vectorTypeId, args.size(), args.data());
   }
+
+
+  uint32_t SpirvModule::constfReplicant(
+          float                   replicant,
+          uint32_t                count) {
+    uint32_t value = this->constf32(replicant);
+
+    std::array<uint32_t, 4> args = { value, value, value, value };
+
+    // Can't make a scalar composite.
+    if (count == 1)
+      return args[0];
+    
+    uint32_t scalarTypeId = this->defFloatType(32);
+    uint32_t vectorTypeId = this->defVectorType(scalarTypeId, count);
+    
+    return this->constComposite(vectorTypeId, count, args.data());
+  }
+
+
+  uint32_t SpirvModule::constbReplicant(
+          bool                    replicant,
+          uint32_t                count) {
+    uint32_t value = this->constBool(replicant);
+
+    std::array<uint32_t, 4> args = { value, value, value, value };
+
+    // Can't make a scalar composite.
+    if (count == 1)
+      return args[0];
+    
+    uint32_t scalarTypeId = this->defBoolType();
+    uint32_t vectorTypeId = this->defVectorType(scalarTypeId, count);
+    
+    return this->constComposite(vectorTypeId, count, args.data());
+  }
+
+
+  uint32_t SpirvModule::constiReplicant(
+          int32_t                 replicant,
+          uint32_t                count) {
+    uint32_t value = this->consti32(replicant);
+
+    std::array<uint32_t, 4> args = { value, value, value, value };
+
+    // Can't make a scalar composite.
+    if (count == 1)
+      return args[0];
+    
+    uint32_t scalarTypeId = this->defIntType(32, 1);
+    uint32_t vectorTypeId = this->defVectorType(scalarTypeId, count);
+    
+    return this->constComposite(vectorTypeId, count, args.data());
+  }
+
+
+  uint32_t SpirvModule::constuReplicant(
+          int32_t                 replicant,
+          uint32_t                count) {
+    uint32_t value = this->constu32(replicant);
+
+    std::array<uint32_t, 4> args = { value, value, value, value };
+
+    // Can't make a scalar composite.
+    if (count == 1)
+      return args[0];
+    
+    uint32_t scalarTypeId = this->defIntType(32, 0);
+    uint32_t vectorTypeId = this->defVectorType(scalarTypeId, count);
+    
+    return this->constComposite(vectorTypeId, count, args.data());
+  }
   
   
   uint32_t SpirvModule::constComposite(
@@ -354,6 +444,45 @@ namespace dxvk {
   }
   
   
+  uint32_t SpirvModule::constUndef(
+          uint32_t                typeId) {
+    return this->defConst(spv::OpUndef,
+      typeId, 0, nullptr);
+  }
+
+
+  uint32_t SpirvModule::lateConst32(
+          uint32_t                typeId) {
+    uint32_t resultId = this->allocateId();
+    m_lateConsts.insert(resultId);
+
+    m_typeConstDefs.putIns (spv::OpConstant, 4);
+    m_typeConstDefs.putWord(typeId);
+    m_typeConstDefs.putWord(resultId);
+    m_typeConstDefs.putWord(0);
+    return resultId;
+  }
+
+
+  void SpirvModule::setLateConst(
+            uint32_t                constId,
+      const uint32_t*               argIds) {
+    for (auto ins : m_typeConstDefs) {
+      if (ins.opCode() != spv::OpConstant
+       && ins.opCode() != spv::OpConstantComposite)
+        continue;
+      
+      if (ins.arg(2) != constId)
+        continue;
+
+      for (uint32_t i = 3; i < ins.length(); i++)
+        ins.setArg(i, argIds[i - 3]);
+
+      return;
+    }
+  }
+
+
   uint32_t SpirvModule::specConstBool(
           bool                    v) {
     uint32_t typeId   = this->defBoolType();
@@ -516,6 +645,29 @@ namespace dxvk {
     m_annotations.putWord (memberId);
     m_annotations.putWord (spv::DecorationBuiltIn);
     m_annotations.putWord (builtIn);
+  }
+
+
+  void SpirvModule::memberDecorate(
+          uint32_t                structId,
+          uint32_t                memberId,
+          spv::Decoration         decoration) {
+    m_annotations.putIns  (spv::OpMemberDecorate, 4);
+    m_annotations.putWord (structId);
+    m_annotations.putWord (memberId);
+    m_annotations.putWord (decoration);
+  }
+
+
+  void SpirvModule::memberDecorateMatrixStride(
+          uint32_t                structId,
+          uint32_t                memberId,
+          uint32_t                stride) {
+    m_annotations.putIns  (spv::OpMemberDecorate, 5);
+    m_annotations.putWord (structId);
+    m_annotations.putWord (memberId);
+    m_annotations.putWord (spv::DecorationMatrixStride);
+    m_annotations.putWord (stride);
   }
   
   
@@ -767,8 +919,8 @@ namespace dxvk {
   void SpirvModule::functionEnd() {
     m_code.putIns (spv::OpFunctionEnd, 1);
   }
-  
-  
+
+
   uint32_t SpirvModule::opAccessChain(
           uint32_t                resultType,
           uint32_t                composite,
@@ -1618,6 +1770,42 @@ namespace dxvk {
     m_code.putWord(operand);
     return resultId;
   }
+
+
+  uint32_t SpirvModule::opFMix(
+          uint32_t                resultType,
+          uint32_t                x,
+          uint32_t                y,
+          uint32_t                a) {
+    uint32_t resultId = this->allocateId();
+    
+    m_code.putIns (spv::OpExtInst, 8);
+    m_code.putWord(resultType);
+    m_code.putWord(resultId);
+    m_code.putWord(m_instExtGlsl450);
+    m_code.putWord(spv::GLSLstd450FMix);
+    m_code.putWord(x);
+    m_code.putWord(y);
+    m_code.putWord(a);
+    return resultId;
+  }
+
+
+  uint32_t SpirvModule::opCross(
+          uint32_t                resultType,
+          uint32_t                x,
+          uint32_t                y) {
+    uint32_t resultId = this->allocateId();
+    
+    m_code.putIns (spv::OpExtInst, 7);
+    m_code.putWord(resultType);
+    m_code.putWord(resultId);
+    m_code.putWord(m_instExtGlsl450);
+    m_code.putWord(spv::GLSLstd450Cross);
+    m_code.putWord(x);
+    m_code.putWord(y);
+    return resultId;
+  }
   
   
   uint32_t SpirvModule::opIAdd(
@@ -1796,6 +1984,79 @@ namespace dxvk {
     m_code.putWord(resultId);
     m_code.putWord(vector);
     m_code.putWord(scalar);
+    return resultId;
+  }
+
+
+  uint32_t SpirvModule::opMatrixTimesMatrix(
+    uint32_t                resultType,
+    uint32_t                a,
+    uint32_t                b) {
+    uint32_t resultId = this->allocateId();
+
+    m_code.putIns(spv::OpMatrixTimesMatrix, 5);
+    m_code.putWord(resultType);
+    m_code.putWord(resultId);
+    m_code.putWord(a);
+    m_code.putWord(b);
+    return resultId;
+  }
+
+
+  uint32_t SpirvModule::opMatrixTimesVector(
+    uint32_t                resultType,
+    uint32_t                matrix,
+    uint32_t                vector) {
+    uint32_t resultId = this->allocateId();
+
+    m_code.putIns(spv::OpMatrixTimesVector, 5);
+    m_code.putWord(resultType);
+    m_code.putWord(resultId);
+    m_code.putWord(matrix);
+    m_code.putWord(vector);
+    return resultId;
+  }
+
+
+  uint32_t SpirvModule::opVectorTimesMatrix(
+    uint32_t                resultType,
+    uint32_t                vector,
+    uint32_t                matrix) {
+    uint32_t resultId = this->allocateId();
+
+    m_code.putIns(spv::OpVectorTimesMatrix, 5);
+    m_code.putWord(resultType);
+    m_code.putWord(resultId);
+    m_code.putWord(vector);
+    m_code.putWord(matrix);
+    return resultId;
+  }
+
+
+  uint32_t SpirvModule::opTranspose(
+    uint32_t                resultType,
+    uint32_t                matrix) {
+    uint32_t resultId = this->allocateId();
+
+    m_code.putIns(spv::OpTranspose, 4);
+    m_code.putWord(resultType);
+    m_code.putWord(resultId);
+    m_code.putWord(matrix);
+    return resultId;
+  }
+
+
+  uint32_t SpirvModule::opInverse(
+    uint32_t                resultType,
+    uint32_t                matrix) {
+    uint32_t resultId = this->allocateId();
+
+    m_code.putIns(spv::OpExtInst, 6);
+    m_code.putWord(resultType);
+    m_code.putWord(resultId);
+    m_code.putWord(m_instExtGlsl450);
+    m_code.putWord(spv::GLSLstd450MatrixInverse);
+    m_code.putWord(matrix);
     return resultId;
   }
 
@@ -2379,6 +2640,53 @@ namespace dxvk {
     m_code.putWord(operand);
     return resultId;
   }
+
+
+  uint32_t SpirvModule::opNormalize(
+          uint32_t                resultType,
+          uint32_t                operand) {
+    uint32_t resultId = this->allocateId();
+    
+    m_code.putIns (spv::OpExtInst, 6);
+    m_code.putWord(resultType);
+    m_code.putWord(resultId);
+    m_code.putWord(m_instExtGlsl450);
+    m_code.putWord(spv::GLSLstd450Normalize);
+    m_code.putWord(operand);
+    return resultId;
+  }
+
+
+  uint32_t SpirvModule::opReflect(
+          uint32_t                resultType,
+          uint32_t                incident,
+          uint32_t                normal) {
+    uint32_t resultId = this->allocateId();
+    
+    m_code.putIns (spv::OpExtInst, 7);
+    m_code.putWord(resultType);
+    m_code.putWord(resultId);
+    m_code.putWord(m_instExtGlsl450);
+    m_code.putWord(spv::GLSLstd450Reflect);
+    m_code.putWord(incident);
+    m_code.putWord(normal);
+    return resultId;
+  }
+
+
+  uint32_t SpirvModule::opLength(
+          uint32_t                resultType,
+          uint32_t                operand) {
+    uint32_t resultId = this->allocateId();
+    
+    m_code.putIns (spv::OpExtInst, 6);
+    m_code.putWord(resultType);
+    m_code.putWord(resultId);
+    m_code.putWord(m_instExtGlsl450);
+    m_code.putWord(spv::GLSLstd450Length);
+    m_code.putWord(operand);
+    return resultId;
+  }
   
   
   uint32_t SpirvModule::opExp2(
@@ -2391,6 +2699,21 @@ namespace dxvk {
     m_code.putWord(resultId);
     m_code.putWord(m_instExtGlsl450);
     m_code.putWord(spv::GLSLstd450Exp2);
+    m_code.putWord(operand);
+    return resultId;
+  }
+
+
+  uint32_t SpirvModule::opExp(
+          uint32_t                resultType,
+          uint32_t                operand) {
+    uint32_t resultId = this->allocateId();
+    
+    m_code.putIns (spv::OpExtInst, 6);
+    m_code.putWord(resultType);
+    m_code.putWord(resultId);
+    m_code.putWord(m_instExtGlsl450);
+    m_code.putWord(spv::GLSLstd450Exp);
     m_code.putWord(operand);
     return resultId;
   }
@@ -2576,6 +2899,19 @@ namespace dxvk {
   }
   
   
+  uint32_t SpirvModule::opIsNan(
+          uint32_t                resultType,
+          uint32_t                operand) {
+    uint32_t resultId = this->allocateId();
+    
+    m_code.putIns (spv::OpIsNan, 4);
+    m_code.putWord(resultType);
+    m_code.putWord(resultId);
+    m_code.putWord(operand);
+    return resultId;
+  }
+
+
   uint32_t SpirvModule::opFunctionCall(
           uint32_t                resultType,
           uint32_t                functionId,
@@ -2667,6 +3003,19 @@ namespace dxvk {
     m_code.putWord(spv::GLSLstd450InterpolateAtOffset);
     m_code.putWord(interpolant);
     m_code.putWord(offset);
+    return resultId;
+  }
+
+
+  uint32_t SpirvModule::opImage(
+          uint32_t                resultType,
+          uint32_t                sampledImage) {
+    uint32_t resultId = this->allocateId();
+
+    m_code.putIns(spv::OpImage, 4);
+    m_code.putWord(resultType);
+    m_code.putWord(resultId);
+    m_code.putWord(sampledImage);
     return resultId;
   }
   
@@ -3059,24 +3408,30 @@ namespace dxvk {
   }
 
 
-  uint32_t SpirvModule::opGroupNonUniformLogicalAnd(
+  uint32_t SpirvModule::opGroupNonUniformElect(
           uint32_t                resultType,
-          uint32_t                execution,
-          uint32_t                operation,
-          uint32_t                value,
-          uint32_t                clusterSize) {
+          uint32_t                execution) {
     uint32_t resultId = this->allocateId();
 
-    m_code.putIns(spv::OpGroupNonUniformLogicalAnd,
-      6 + (clusterSize ? 1 : 0));
+    m_code.putIns(spv::OpGroupNonUniformElect, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(execution);
-    m_code.putWord(operation);
-    m_code.putWord(value);
+    return resultId;
+  }
 
-    if (clusterSize)
-      m_code.putWord(clusterSize);
+  
+  uint32_t SpirvModule::opGroupNonUniformBroadcastFirst(
+          uint32_t                resultType,
+          uint32_t                execution,
+          uint32_t                value) {
+    uint32_t resultId = this->allocateId();
+
+    m_code.putIns(spv::OpGroupNonUniformBroadcastFirst, 5);
+    m_code.putWord(resultType);
+    m_code.putWord(resultId);
+    m_code.putWord(execution);
+    m_code.putWord(value);
     return resultId;
   }
 
@@ -3184,6 +3539,11 @@ namespace dxvk {
   }
   
   
+  void SpirvModule::opDemoteToHelperInvocation() {
+    m_code.putIns (spv::OpDemoteToHelperInvocationEXT, 1);
+  }
+  
+  
   void SpirvModule::opEmitVertex(
           uint32_t                streamId) {
     if (streamId == 0) {
@@ -3249,8 +3609,13 @@ namespace dxvk {
       for (uint32_t i = 0; i < argCount && match; i++)
         match &= ins.arg(3 + i) == argIds[i];
       
-      if (match)
-        return ins.arg(2);
+      if (!match)
+        continue;
+      
+      uint32_t id = ins.arg(2);
+
+      if (m_lateConsts.find(id) == m_lateConsts.end())
+        return id;
     }
     
     // Constant not yet declared, make a new one

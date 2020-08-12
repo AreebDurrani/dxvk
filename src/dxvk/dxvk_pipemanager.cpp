@@ -4,41 +4,6 @@
 
 namespace dxvk {
   
-  size_t DxvkPipelineKeyHash::operator () (const DxvkComputePipelineKey& key) const {
-    std::hash<DxvkShader*> hash;
-    return hash(key.cs.ptr());
-  }
-  
-  
-  size_t DxvkPipelineKeyHash::operator () (const DxvkGraphicsPipelineKey& key) const {
-    DxvkHashState state;
-    
-    std::hash<DxvkShader*> hash;
-    state.add(hash(key.vs.ptr()));
-    state.add(hash(key.tcs.ptr()));
-    state.add(hash(key.tes.ptr()));
-    state.add(hash(key.gs.ptr()));
-    state.add(hash(key.fs.ptr()));
-    return state;
-  }
-  
-  
-  bool DxvkPipelineKeyEq::operator () (
-    const DxvkComputePipelineKey& a,
-    const DxvkComputePipelineKey& b) const {
-    return a.cs == b.cs;
-  }
-  
-  
-  bool DxvkPipelineKeyEq::operator () (
-    const DxvkGraphicsPipelineKey& a,
-    const DxvkGraphicsPipelineKey& b) const {
-    return a.vs == b.vs && a.tcs == b.tcs
-        && a.tes == b.tes && a.gs == b.gs
-        && a.fs == b.fs;
-  }
-  
-  
   DxvkPipelineManager::DxvkPipelineManager(
     const DxvkDevice*         device,
           DxvkRenderPassPool* passManager)
@@ -56,55 +21,41 @@ namespace dxvk {
   }
   
   
-  Rc<DxvkComputePipeline> DxvkPipelineManager::createComputePipeline(
-    const Rc<DxvkShader>&         cs) {
-    if (cs == nullptr)
+  DxvkComputePipeline* DxvkPipelineManager::createComputePipeline(
+    const DxvkComputePipelineShaders& shaders) {
+    if (shaders.cs == nullptr)
       return nullptr;
     
     std::lock_guard<std::mutex> lock(m_mutex);
     
-    DxvkComputePipelineKey key;
-    key.cs = cs;
-    
-    auto pair = m_computePipelines.find(key);
+    auto pair = m_computePipelines.find(shaders);
     if (pair != m_computePipelines.end())
-      return pair->second;
+      return &pair->second;
     
-    const Rc<DxvkComputePipeline> pipeline
-      = new DxvkComputePipeline(this, cs);
-    
-    m_computePipelines.insert(std::make_pair(key, pipeline));
-    return pipeline;
+    auto iter = m_computePipelines.emplace(
+      std::piecewise_construct,
+      std::tuple(shaders),
+      std::tuple(this, shaders));
+    return &iter.first->second;
   }
   
   
-  Rc<DxvkGraphicsPipeline> DxvkPipelineManager::createGraphicsPipeline(
-    const Rc<DxvkShader>&         vs,
-    const Rc<DxvkShader>&         tcs,
-    const Rc<DxvkShader>&         tes,
-    const Rc<DxvkShader>&         gs,
-    const Rc<DxvkShader>&         fs) {
-    if (vs == nullptr)
+  DxvkGraphicsPipeline* DxvkPipelineManager::createGraphicsPipeline(
+    const DxvkGraphicsPipelineShaders& shaders) {
+    if (shaders.vs == nullptr)
       return nullptr;
     
     std::lock_guard<std::mutex> lock(m_mutex);
     
-    DxvkGraphicsPipelineKey key;
-    key.vs  = vs;
-    key.tcs = tcs;
-    key.tes = tes;
-    key.gs  = gs;
-    key.fs  = fs;
-    
-    auto pair = m_graphicsPipelines.find(key);
+    auto pair = m_graphicsPipelines.find(shaders);
     if (pair != m_graphicsPipelines.end())
-      return pair->second;
+      return &pair->second;
     
-    Rc<DxvkGraphicsPipeline> pipeline = new DxvkGraphicsPipeline(
-      this, vs, tcs, tes, gs, fs);
-    
-    m_graphicsPipelines.insert(std::make_pair(key, pipeline));
-    return pipeline;
+    auto iter = m_graphicsPipelines.emplace(
+      std::piecewise_construct,
+      std::tuple(shaders),
+      std::tuple(this, shaders));
+    return &iter.first->second;
   }
 
   

@@ -81,18 +81,12 @@ namespace dxvk {
      * defined by another shader stage, this will extend
      * the stage mask by the given stage. Otherwise, an
      * entirely new binding is added.
-     * \param [in] slot Resource slot
-     * \param [in] type Resource type
-     * \param [in] view Image view type
      * \param [in] stage Shader stage
-     * \param [in] access Access flags
+     * \param [in] desc Slot description
      */
     void defineSlot(
-            uint32_t              slot,
-            VkDescriptorType      type,
-            VkImageViewType       view,
             VkShaderStageFlagBits stage,
-            VkAccessFlags         access);
+      const DxvkResourceSlot&     desc);
 
     /**
      * \brief Defines new push constant range
@@ -241,13 +235,12 @@ namespace dxvk {
      * \brief Checks for static buffer bindings
      * 
      * Returns \c true if there is at least one
-     * descriptor of the static uniform or storage
-     * buffer type.
+     * descriptor of the static uniform buffer
+     * type.
      */
     bool hasStaticBufferBindings() const {
-      return m_descriptorTypes.any(
-        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+      return m_descriptorTypes.test(
+        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     }
     
     /**

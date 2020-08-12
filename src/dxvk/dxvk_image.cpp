@@ -38,10 +38,10 @@ namespace dxvk {
     info.sharingMode           = VK_SHARING_MODE_EXCLUSIVE;
     info.queueFamilyIndexCount = 0;
     info.pQueueFamilyIndices   = nullptr;
-    info.initialLayout         = VK_IMAGE_LAYOUT_UNDEFINED;
+    info.initialLayout         = createInfo.initialLayout;
     
     if (m_vkd->vkCreateImage(m_vkd->device(),
-          &info, nullptr, &m_image) != VK_SUCCESS) {
+          &info, nullptr, &m_image.image) != VK_SUCCESS) {
       throw DxvkError(str::format(
         "DxvkImage: Failed to create image:",
         "\n  Type:            ", info.imageType,
@@ -60,31 +60,31 @@ namespace dxvk {
     // alignment on non-linear images in order not to violate the
     // bufferImageGranularity limit, which may be greater than the
     // required resource memory alignment on some GPUs.
-    VkMemoryDedicatedRequirementsKHR dedicatedRequirements;
-    dedicatedRequirements.sType                       = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS_KHR;
+    VkMemoryDedicatedRequirements dedicatedRequirements;
+    dedicatedRequirements.sType                       = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS;
     dedicatedRequirements.pNext                       = VK_NULL_HANDLE;
     dedicatedRequirements.prefersDedicatedAllocation  = VK_FALSE;
     dedicatedRequirements.requiresDedicatedAllocation = VK_FALSE;
     
-    VkMemoryRequirements2KHR memReq;
-    memReq.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2_KHR;
+    VkMemoryRequirements2 memReq;
+    memReq.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
     memReq.pNext = &dedicatedRequirements;
     
-    VkImageMemoryRequirementsInfo2KHR memReqInfo;
-    memReqInfo.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2_KHR;
-    memReqInfo.image = m_image;
+    VkImageMemoryRequirementsInfo2 memReqInfo;
+    memReqInfo.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2;
+    memReqInfo.image = m_image.image;
     memReqInfo.pNext = VK_NULL_HANDLE;
 
-    VkMemoryDedicatedAllocateInfoKHR dedMemoryAllocInfo;
-    dedMemoryAllocInfo.sType  = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO_KHR;
+    VkMemoryDedicatedAllocateInfo dedMemoryAllocInfo;
+    dedMemoryAllocInfo.sType  = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
     dedMemoryAllocInfo.pNext  = VK_NULL_HANDLE;
     dedMemoryAllocInfo.buffer = VK_NULL_HANDLE;
-    dedMemoryAllocInfo.image  = m_image;
+    dedMemoryAllocInfo.image  = m_image.image;
     
-    m_vkd->vkGetImageMemoryRequirements2KHR(
+    m_vkd->vkGetImageMemoryRequirements2(
       m_vkd->device(), &memReqInfo, &memReq);
  
-    if (info.tiling != VK_IMAGE_TILING_LINEAR) {
+    if (info.tiling != VK_IMAGE_TILING_LINEAR && !dedicatedRequirements.prefersDedicatedAllocation) {
       memReq.memoryRequirements.size      = align(memReq.memoryRequirements.size,       memAlloc.bufferImageGranularity());
       memReq.memoryRequirements.alignment = align(memReq.memoryRequirements.alignment , memAlloc.bufferImageGranularity());
     }
@@ -98,14 +98,12 @@ namespace dxvk {
     float priority = isGpuWritable ? 1.0f : 0.5f;
 
     // Ask driver whether we should be using a dedicated allocation
-    bool useDedicated = dedicatedRequirements.prefersDedicatedAllocation;
-
-    m_memory = memAlloc.alloc(&memReq.memoryRequirements,
-      useDedicated ? &dedMemoryAllocInfo : nullptr, memFlags, priority);
+    m_image.memory = memAlloc.alloc(&memReq.memoryRequirements,
+      dedicatedRequirements, dedMemoryAllocInfo, memFlags, priority);
     
     // Try to bind the allocated memory slice to the image
-    if (m_vkd->vkBindImageMemory(m_vkd->device(),
-          m_image, m_memory.memory(), m_memory.offset()) != VK_SUCCESS)
+    if (m_vkd->vkBindImageMemory(m_vkd->device(), m_image.image,
+          m_image.memory.memory(), m_image.memory.offset()) != VK_SUCCESS)
       throw DxvkError("DxvkImage::DxvkImage: Failed to bind device memory");
   }
   
@@ -114,7 +112,7 @@ namespace dxvk {
     const Rc<vk::DeviceFn>&     vkd,
     const DxvkImageCreateInfo&  info,
           VkImage               image)
-  : m_vkd(vkd), m_info(info), m_image(image) {
+  : m_vkd(vkd), m_info(info), m_image({ image }) {
     
   }
   
@@ -122,8 +120,8 @@ namespace dxvk {
   DxvkImage::~DxvkImage() {
     // This is a bit of a hack to determine whether
     // the image is implementation-handled or not
-    if (m_memory.memory() != VK_NULL_HANDLE)
-      m_vkd->vkDestroyImage(m_vkd->device(), m_image, nullptr);
+    if (m_image.memory.memory() != VK_NULL_HANDLE)
+      m_vkd->vkDestroyImage(m_vkd->device(), m_image.image, nullptr);
   }
   
   
@@ -132,15 +130,14 @@ namespace dxvk {
     const Rc<DxvkImage>&            image,
     const DxvkImageViewCreateInfo&  info)
   : m_vkd(vkd), m_image(image), m_info(info) {
-    // Since applications tend to bind views 
     for (uint32_t i = 0; i < ViewCount; i++)
       m_views[i] = VK_NULL_HANDLE;
     
-    switch (info.type) {
+    switch (m_info.type) {
       case VK_IMAGE_VIEW_TYPE_1D:
       case VK_IMAGE_VIEW_TYPE_1D_ARRAY: {
         this->createView(VK_IMAGE_VIEW_TYPE_1D,       1);
-        this->createView(VK_IMAGE_VIEW_TYPE_1D_ARRAY, info.numLayers);
+        this->createView(VK_IMAGE_VIEW_TYPE_1D_ARRAY, m_info.numLayers);
       } break;
       
       case VK_IMAGE_VIEW_TYPE_2D:
@@ -150,10 +147,10 @@ namespace dxvk {
 
       case VK_IMAGE_VIEW_TYPE_CUBE:
       case VK_IMAGE_VIEW_TYPE_CUBE_ARRAY: {
-        this->createView(VK_IMAGE_VIEW_TYPE_2D_ARRAY, info.numLayers);
+        this->createView(VK_IMAGE_VIEW_TYPE_2D_ARRAY, m_info.numLayers);
         
         if (m_image->info().flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) {
-          uint32_t cubeCount = info.numLayers / 6;
+          uint32_t cubeCount = m_info.numLayers / 6;
         
           if (cubeCount > 0) {
             this->createView(VK_IMAGE_VIEW_TYPE_CUBE,       6);
@@ -165,14 +162,14 @@ namespace dxvk {
       case VK_IMAGE_VIEW_TYPE_3D: {
         this->createView(VK_IMAGE_VIEW_TYPE_3D, 1);
         
-        if (m_image->info().flags & VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT_KHR && info.numLevels == 1) {
+        if (m_image->info().flags & VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT && m_info.numLevels == 1) {
           this->createView(VK_IMAGE_VIEW_TYPE_2D,       1);
-          this->createView(VK_IMAGE_VIEW_TYPE_2D_ARRAY, m_image->mipLevelExtent(info.minLevel).depth);
+          this->createView(VK_IMAGE_VIEW_TYPE_2D_ARRAY, m_image->mipLevelExtent(m_info.minLevel).depth);
         }
       } break;
       
       default:
-        throw DxvkError(str::format("DxvkImageView: Invalid view type: ", info.type));
+        throw DxvkError(str::format("DxvkImageView: Invalid view type: ", m_info.type));
     }
   }
   
@@ -181,7 +178,7 @@ namespace dxvk {
     for (uint32_t i = 0; i < ViewCount; i++)
       m_vkd->vkDestroyImageView(m_vkd->device(), m_views[i], nullptr);
   }
-  
+
   
   void DxvkImageView::createView(VkImageViewType type, uint32_t numLayers) {
     VkImageSubresourceRange subresourceRange;
@@ -191,8 +188,8 @@ namespace dxvk {
     subresourceRange.baseArrayLayer = m_info.minLayer;
     subresourceRange.layerCount     = numLayers;
 
-    VkImageViewUsageCreateInfoKHR viewUsage;
-    viewUsage.sType           = VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO_KHR;
+    VkImageViewUsageCreateInfo viewUsage;
+    viewUsage.sType           = VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO;
     viewUsage.pNext           = nullptr;
     viewUsage.usage           = m_info.usage;
     

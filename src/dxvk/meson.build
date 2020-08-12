@@ -1,4 +1,8 @@
 dxvk_shaders = files([
+  'shaders/dxvk_blit_frag_1d.frag',
+  'shaders/dxvk_blit_frag_2d.frag',
+  'shaders/dxvk_blit_frag_3d.frag',
+
   'shaders/dxvk_clear_buffer_u.comp',
   'shaders/dxvk_clear_buffer_f.comp',
   'shaders/dxvk_clear_image1d_u.comp',
@@ -12,24 +16,25 @@ dxvk_shaders = files([
   'shaders/dxvk_clear_image3d_u.comp',
   'shaders/dxvk_clear_image3d_f.comp',
   
-  'shaders/dxvk_copy_vert.vert',
-  'shaders/dxvk_copy_geom.geom',
   'shaders/dxvk_copy_color_1d.frag',
   'shaders/dxvk_copy_color_2d.frag',
   'shaders/dxvk_copy_color_ms.frag',
   'shaders/dxvk_copy_depth_1d.frag',
   'shaders/dxvk_copy_depth_2d.frag',
   'shaders/dxvk_copy_depth_ms.frag',
+  'shaders/dxvk_copy_depth_stencil_1d.frag',
+  'shaders/dxvk_copy_depth_stencil_2d.frag',
+  'shaders/dxvk_copy_depth_stencil_ms.frag',
 
-  'shaders/dxvk_mipgen_vert.vert',
-  'shaders/dxvk_mipgen_geom.geom',
-  'shaders/dxvk_mipgen_frag_1d.frag',
-  'shaders/dxvk_mipgen_frag_2d.frag',
-  'shaders/dxvk_mipgen_frag_3d.frag',
+  'shaders/dxvk_fullscreen_geom.geom',
+  'shaders/dxvk_fullscreen_vert.vert',
+  'shaders/dxvk_fullscreen_layer_vert.vert',
 
   'shaders/dxvk_pack_d24s8.comp',
   'shaders/dxvk_pack_d32s8.comp',
 
+  'shaders/dxvk_resolve_frag_d.frag',
+  'shaders/dxvk_resolve_frag_ds.frag',
   'shaders/dxvk_resolve_frag_f.frag',
   'shaders/dxvk_resolve_frag_f_amd.frag',
   'shaders/dxvk_resolve_frag_i.frag',
@@ -59,7 +64,6 @@ dxvk_src = files([
   'dxvk_device.cpp',
   'dxvk_device_filter.cpp',
   'dxvk_extensions.cpp',
-  'dxvk_event.cpp',
   'dxvk_format.cpp',
   'dxvk_framebuffer.cpp',
   'dxvk_gpu_event.cpp',
@@ -70,6 +74,7 @@ dxvk_src = files([
   'dxvk_lifetime.cpp',
   'dxvk_main.cpp',
   'dxvk_memory.cpp',
+  'dxvk_meta_blit.cpp',
   'dxvk_meta_clear.cpp',
   'dxvk_meta_copy.cpp',
   'dxvk_meta_mipgen.cpp',
@@ -86,20 +91,20 @@ dxvk_src = files([
   'dxvk_sampler.cpp',
   'dxvk_shader.cpp',
   'dxvk_shader_key.cpp',
+  'dxvk_signal.cpp',
   'dxvk_spec_const.cpp',
   'dxvk_staging.cpp',
   'dxvk_state_cache.cpp',
   'dxvk_stats.cpp',
   'dxvk_unbound.cpp',
   'dxvk_util.cpp',
+
+  'platform/dxvk_win32_exts.cpp',
   
   'hud/dxvk_hud.cpp',
-  'hud/dxvk_hud_config.cpp',
-  'hud/dxvk_hud_devinfo.cpp',
   'hud/dxvk_hud_font.cpp',
-  'hud/dxvk_hud_fps.cpp',
+  'hud/dxvk_hud_item.cpp',
   'hud/dxvk_hud_renderer.cpp',
-  'hud/dxvk_hud_stats.cpp',
 ])
 
 thread_dep = dependency('threads')

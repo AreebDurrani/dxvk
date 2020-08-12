@@ -24,7 +24,7 @@ namespace dxvk {
   }
   
   
-  class DxgiOutput : public DxgiObject<IDXGIOutput4> {
+  class DxgiOutput : public DxgiObject<IDXGIOutput6> {
     
   public:
     
@@ -56,6 +56,9 @@ namespace dxvk {
     HRESULT STDMETHODCALLTYPE GetDesc(
             DXGI_OUTPUT_DESC*     pDesc) final;
     
+    HRESULT STDMETHODCALLTYPE GetDesc1(
+            DXGI_OUTPUT_DESC1*    pDesc) final;
+
     HRESULT STDMETHODCALLTYPE GetDisplayModeList(
             DXGI_FORMAT           EnumFormat,
             UINT                  Flags,
@@ -101,6 +104,13 @@ namespace dxvk {
             IUnknown*                 pDevice,
             IDXGIOutputDuplication**  ppOutputDuplication) final;
     
+    HRESULT STDMETHODCALLTYPE DuplicateOutput1(
+            IUnknown*                 pDevice,
+            UINT                      Flags,
+            UINT                      SupportedFormatsCount,
+      const DXGI_FORMAT*              pSupportedFormats,
+            IDXGIOutputDuplication**  ppOutputDuplication) final;
+    
     BOOL STDMETHODCALLTYPE SupportsOverlays() final;
 
     HRESULT STDMETHODCALLTYPE CheckOverlaySupport(
@@ -114,11 +124,18 @@ namespace dxvk {
             IUnknown*             pConcernedDevice,
             UINT*                 pFlags) final;
     
+    HRESULT STDMETHODCALLTYPE CheckHardwareCompositionSupport(
+            UINT*                 pFlags) final;
+
   private:
     
     DxgiMonitorInfo* m_monitorInfo = nullptr;
     Com<DxgiAdapter> m_adapter = nullptr;
     HMONITOR         m_monitor = nullptr;
+
+    static void FilterModesByDesc(
+            std::vector<DXGI_MODE_DESC1>& Modes,
+      const DXGI_MODE_DESC1&              TargetMode);
     
   };
 

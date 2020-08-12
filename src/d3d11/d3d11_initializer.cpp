@@ -41,11 +41,28 @@ namespace dxvk {
   void D3D11Initializer::InitTexture(
           D3D11CommonTexture*         pTexture,
     const D3D11_SUBRESOURCE_DATA*     pInitialData) {
-    VkMemoryPropertyFlags memFlags = pTexture->GetImage()->memFlags();
-    
-    (memFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+    (pTexture->GetMapMode() == D3D11_COMMON_TEXTURE_MAP_MODE_DIRECT)
       ? InitHostVisibleTexture(pTexture, pInitialData)
       : InitDeviceLocalTexture(pTexture, pInitialData);
+  }
+
+
+  void D3D11Initializer::InitUavCounter(
+          D3D11UnorderedAccessView*   pUav) {
+    auto counterBuffer = pUav->GetCounterSlice();
+
+    if (!counterBuffer.defined())
+      return;
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_transferCommands += 1;
+
+    const uint32_t zero = 0;
+    m_context->updateBuffer(
+      counterBuffer.buffer(),
+      0, sizeof(zero), &zero);
+
+    FlushImplicit();
   }
 
 
@@ -60,10 +77,8 @@ namespace dxvk {
       m_transferMemory   += bufferSlice.length();
       m_transferCommands += 1;
       
-      m_context->updateBuffer(
+      m_context->uploadBuffer(
         bufferSlice.buffer(),
-        bufferSlice.offset(),
-        bufferSlice.length(),
         pInitialData->pSysMem);
     } else {
       m_transferCommands += 1;
@@ -116,16 +131,13 @@ namespace dxvk {
       // pInitialData is an array that stores an entry for
       // every single subresource. Since we will define all
       // subresources, this counts as initialization.
-      VkImageSubresourceLayers subresourceLayers;
-      subresourceLayers.aspectMask     = formatInfo->aspectMask;
-      subresourceLayers.mipLevel       = 0;
-      subresourceLayers.baseArrayLayer = 0;
-      subresourceLayers.layerCount     = 1;
-      
       for (uint32_t layer = 0; layer < image->info().numLayers; layer++) {
         for (uint32_t level = 0; level < image->info().mipLevels; level++) {
-          subresourceLayers.baseArrayLayer = layer;
+          VkImageSubresourceLayers subresourceLayers;
+          subresourceLayers.aspectMask     = formatInfo->aspectMask;
           subresourceLayers.mipLevel       = level;
+          subresourceLayers.baseArrayLayer = layer;
+          subresourceLayers.layerCount     = 1;
           
           const uint32_t id = D3D11CalcSubresource(
             level, layer, image->info().mipLevels);
@@ -138,10 +150,8 @@ namespace dxvk {
             image->info().format, mipLevelExtent);
           
           if (formatInfo->aspectMask != (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) {
-            m_context->updateImage(
+            m_context->uploadImage(
               image, subresourceLayers,
-              mipLevelOffset,
-              mipLevelExtent,
               pInitialData[id].pSysMem,
               pInitialData[id].SysMemPitch,
               pInitialData[id].SysMemSlicePitch);
@@ -154,6 +164,12 @@ namespace dxvk {
               pInitialData[id].SysMemPitch,
               pInitialData[id].SysMemSlicePitch,
               packedFormat);
+          }
+
+          if (pTexture->GetMapMode() == D3D11_COMMON_TEXTURE_MAP_MODE_BUFFER) {
+            util::packImageData(pTexture->GetMappedBuffer(id)->mapPtr(0), pInitialData[id].pSysMem,
+              util::computeBlockCount(image->mipLevelExtent(level), formatInfo->blockSize),
+              formatInfo->elementSize, pInitialData[id].SysMemPitch, pInitialData[id].SysMemSlicePitch);
           }
         }
       }
@@ -181,7 +197,7 @@ namespace dxvk {
             image, value, subresources);
         } else {
           VkClearDepthStencilValue value;
-          value.depth   = 1.0f;
+          value.depth   = 0.0f;
           value.stencil = 0;
           
           m_context->clearDepthStencilImage(
@@ -197,8 +213,57 @@ namespace dxvk {
   void D3D11Initializer::InitHostVisibleTexture(
           D3D11CommonTexture*         pTexture,
     const D3D11_SUBRESOURCE_DATA*     pInitialData) {
-    // TODO implement properly with memset/memcpy
-    InitDeviceLocalTexture(pTexture, pInitialData);
+    Rc<DxvkImage> image = pTexture->GetImage();
+
+    for (uint32_t layer = 0; layer < image->info().numLayers; layer++) {
+      for (uint32_t level = 0; level < image->info().mipLevels; level++) {
+        VkImageSubresource subresource;
+        subresource.aspectMask = image->formatInfo()->aspectMask;
+        subresource.mipLevel   = level;
+        subresource.arrayLayer = layer;
+
+        VkExtent3D blockCount = util::computeBlockCount(
+          image->mipLevelExtent(level),
+          image->formatInfo()->blockSize);
+
+        VkSubresourceLayout layout = image->querySubresourceLayout(subresource);
+
+        auto initialData = pInitialData
+          ? &pInitialData[D3D11CalcSubresource(level, layer, image->info().mipLevels)]
+          : nullptr;
+
+        for (uint32_t z = 0; z < blockCount.depth; z++) {
+          for (uint32_t y = 0; y < blockCount.height; y++) {
+            auto size = blockCount.width * image->formatInfo()->elementSize;
+            auto dst = image->mapPtr(layout.offset + y * layout.rowPitch + z * layout.depthPitch);
+
+            if (initialData) {
+              auto src = reinterpret_cast<const char*>(initialData->pSysMem)
+                       + y * initialData->SysMemPitch
+                       + z * initialData->SysMemSlicePitch;
+              std::memcpy(dst, src, size);
+            } else {
+              std::memset(dst, 0, size);
+            }
+          }
+        }
+      }
+    }
+
+    // Initialize the image on the GPU
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    VkImageSubresourceRange subresources;
+    subresources.aspectMask     = image->formatInfo()->aspectMask;
+    subresources.baseMipLevel   = 0;
+    subresources.levelCount     = image->info().mipLevels;
+    subresources.baseArrayLayer = 0;
+    subresources.layerCount     = image->info().numLayers;
+    
+    m_context->initImage(image, subresources, VK_IMAGE_LAYOUT_PREINITIALIZED);
+
+    m_transferCommands += 1;
+    FlushImplicit();
   }
 
 

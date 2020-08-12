@@ -20,17 +20,15 @@ namespace dxvk {
    * of the graphics and compute pipelines
    * has changed and/or needs to be updated.
    */
-  enum class DxvkContextFlag : uint64_t  {
+  enum class DxvkContextFlag : uint32_t  {
     GpRenderPassBound,          ///< Render pass is currently bound
     GpCondActive,               ///< Conditional rendering is enabled
     GpXfbActive,                ///< Transform feedback is enabled
-    GpClearRenderTargets,       ///< Render targets need to be cleared
     GpDirtyFramebuffer,         ///< Framebuffer binding is out of date
     GpDirtyPipeline,            ///< Graphics pipeline binding is out of date
     GpDirtyPipelineState,       ///< Graphics pipeline needs to be recompiled
     GpDirtyResources,           ///< Graphics pipeline resource bindings are out of date
-    GpDirtyDescriptorOffsets,   ///< Graphics descriptor set needs to be rebound
-    GpDirtyDescriptorSet,       ///< Graphics descriptor set needs to be updated
+    GpDirtyDescriptorBinding,   ///< Graphics descriptor set needs to be rebound
     GpDirtyVertexBuffers,       ///< Vertex buffer bindings are out of date
     GpDirtyIndexBuffer,         ///< Index buffer binding are out of date
     GpDirtyXfbBuffers,          ///< Transform feedback buffer bindings are out of date
@@ -49,8 +47,7 @@ namespace dxvk {
     CpDirtyPipeline,            ///< Compute pipeline binding are out of date
     CpDirtyPipelineState,       ///< Compute pipeline needs to be recompiled
     CpDirtyResources,           ///< Compute pipeline resource bindings are out of date
-    CpDirtyDescriptorOffsets,   ///< Compute descriptor set needs to be rebound
-    CpDirtyDescriptorSet,       ///< Compute descriptor set needs to be updated
+    CpDirtyDescriptorBinding,   ///< Compute descriptor set needs to be rebound
     
     DirtyDrawBuffer,            ///< Indirect argument buffer is dirty
     DirtyPushConstants,         ///< Push constant data has changed
@@ -58,6 +55,17 @@ namespace dxvk {
   
   using DxvkContextFlags = Flags<DxvkContextFlag>;
 
+
+  /**
+   * \brief Context feature bits
+   */
+  enum class DxvkContextFeature {
+    NullDescriptors,
+    ExtendedDynamicState,
+  };
+
+  using DxvkContextFeatures = Flags<DxvkContextFeature>;
+  
 
   /**
    * \brief Barrier control flags
@@ -103,7 +111,7 @@ namespace dxvk {
 
 
   struct DxvkPushConstantState {
-    alignas(64) char data[MaxPushConstantSize];
+    char data[MaxPushConstantSize];
   };
 
 
@@ -113,29 +121,18 @@ namespace dxvk {
   };
   
   
-  struct DxvkShaderStage {
-    Rc<DxvkShader> shader;
-  };
-  
-  
   struct DxvkGraphicsPipelineState {
-    DxvkShaderStage vs;
-    DxvkShaderStage tcs;
-    DxvkShaderStage tes;
-    DxvkShaderStage gs;
-    DxvkShaderStage fs;
-
+    DxvkGraphicsPipelineShaders   shaders;
     DxvkGraphicsPipelineStateInfo state;
     DxvkGraphicsPipelineFlags     flags;
-    Rc<DxvkGraphicsPipeline>      pipeline;
+    DxvkGraphicsPipeline*         pipeline = nullptr;
   };
   
   
   struct DxvkComputePipelineState {
-    DxvkShaderStage cs;
-    
+    DxvkComputePipelineShaders    shaders;
     DxvkComputePipelineStateInfo  state;
-    Rc<DxvkComputePipeline>       pipeline;
+    DxvkComputePipeline*          pipeline = nullptr;
   };
 
 
@@ -150,6 +147,13 @@ namespace dxvk {
   struct DxvkCondRenderState {
     DxvkBufferSlice                 predicate;
     VkConditionalRenderingFlagsEXT  flags;
+  };
+
+
+  struct DxvkDeferredClear {
+    Rc<DxvkImageView> imageView;
+    VkImageAspectFlags clearAspects;
+    VkClearValue clearValue;
   };
   
   

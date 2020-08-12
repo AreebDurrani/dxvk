@@ -3,7 +3,11 @@
 #include "../util/rc/util_rc.h"
 #include "../util/rc/util_rc_ptr.h"
 
-#include "vulkan_loader_fn.h"
+#define VK_USE_PLATFORM_WIN32_KHR 1
+#include <vulkan/vulkan.h>
+
+#define VULKAN_FN(name) \
+  ::PFN_ ## name name = reinterpret_cast<::PFN_ ## name>(sym(#name))
 
 namespace dxvk::vk {
   
@@ -82,21 +86,23 @@ namespace dxvk::vk {
     VULKAN_FN(vkEnumerateDeviceExtensionProperties);
     VULKAN_FN(vkEnumeratePhysicalDevices);
     VULKAN_FN(vkGetPhysicalDeviceFeatures);
+    VULKAN_FN(vkGetPhysicalDeviceFeatures2);
     VULKAN_FN(vkGetPhysicalDeviceFormatProperties);
+    VULKAN_FN(vkGetPhysicalDeviceFormatProperties2);
+    VULKAN_FN(vkGetPhysicalDeviceProperties2);
     VULKAN_FN(vkGetPhysicalDeviceImageFormatProperties);
+    VULKAN_FN(vkGetPhysicalDeviceImageFormatProperties2);
     VULKAN_FN(vkGetPhysicalDeviceMemoryProperties);
+    VULKAN_FN(vkGetPhysicalDeviceMemoryProperties2);
     VULKAN_FN(vkGetPhysicalDeviceProperties);
     VULKAN_FN(vkGetPhysicalDeviceQueueFamilyProperties);
+    VULKAN_FN(vkGetPhysicalDeviceQueueFamilyProperties2);
     VULKAN_FN(vkGetPhysicalDeviceSparseImageFormatProperties);
+    VULKAN_FN(vkGetPhysicalDeviceSparseImageFormatProperties2);
 
-    #ifdef VK_KHR_get_physical_device_properties2
-    VULKAN_FN(vkGetPhysicalDeviceFeatures2KHR);
-    VULKAN_FN(vkGetPhysicalDeviceProperties2KHR);
-    VULKAN_FN(vkGetPhysicalDeviceFormatProperties2KHR);
-    VULKAN_FN(vkGetPhysicalDeviceImageFormatProperties2KHR);
-    VULKAN_FN(vkGetPhysicalDeviceQueueFamilyProperties2KHR);
-    VULKAN_FN(vkGetPhysicalDeviceMemoryProperties2KHR);
-    VULKAN_FN(vkGetPhysicalDeviceSparseImageFormatProperties2KHR);
+    #ifdef VK_KHR_get_surface_capabilities2
+    VULKAN_FN(vkGetPhysicalDeviceSurfaceCapabilities2KHR);
+    VULKAN_FN(vkGetPhysicalDeviceSurfaceFormats2KHR);
     #endif
     
     #ifdef VK_KHR_surface
@@ -133,6 +139,10 @@ namespace dxvk::vk {
     VULKAN_FN(vkDestroyDebugReportCallbackEXT);
     VULKAN_FN(vkDebugReportMessageEXT);
     #endif
+
+    #ifdef VK_EXT_full_screen_exclusive
+    VULKAN_FN(vkGetPhysicalDeviceSurfacePresentModes2EXT);
+    #endif
   };
   
   
@@ -161,8 +171,11 @@ namespace dxvk::vk {
     VULKAN_FN(vkBindBufferMemory);
     VULKAN_FN(vkBindImageMemory);
     VULKAN_FN(vkGetBufferMemoryRequirements);
+    VULKAN_FN(vkGetBufferMemoryRequirements2);
     VULKAN_FN(vkGetImageMemoryRequirements);
+    VULKAN_FN(vkGetImageMemoryRequirements2);
     VULKAN_FN(vkGetImageSparseMemoryRequirements);
+    VULKAN_FN(vkGetImageSparseMemoryRequirements2);
     VULKAN_FN(vkQueueBindSparse);
     VULKAN_FN(vkCreateFence);
     VULKAN_FN(vkDestroyFence);
@@ -222,6 +235,9 @@ namespace dxvk::vk {
     VULKAN_FN(vkBeginCommandBuffer);
     VULKAN_FN(vkEndCommandBuffer);
     VULKAN_FN(vkResetCommandBuffer);
+    VULKAN_FN(vkCreateDescriptorUpdateTemplate);
+    VULKAN_FN(vkDestroyDescriptorUpdateTemplate);
+    VULKAN_FN(vkUpdateDescriptorSetWithTemplate);
     VULKAN_FN(vkCmdBindPipeline);
     VULKAN_FN(vkCmdSetViewport);
     VULKAN_FN(vkCmdSetScissor);
@@ -266,14 +282,14 @@ namespace dxvk::vk {
     VULKAN_FN(vkCmdNextSubpass);
     VULKAN_FN(vkCmdEndRenderPass);
     VULKAN_FN(vkCmdExecuteCommands);
-    
-    #ifdef VK_KHR_descriptor_update_template
-    VULKAN_FN(vkCreateDescriptorUpdateTemplateKHR);
-    VULKAN_FN(vkDestroyDescriptorUpdateTemplateKHR);
-    VULKAN_FN(vkUpdateDescriptorSetWithTemplateKHR);
-    VULKAN_FN(vkCmdPushDescriptorSetWithTemplateKHR);
-    #endif
 
+    #ifdef VK_KHR_create_renderpass2
+    VULKAN_FN(vkCreateRenderPass2KHR);
+    VULKAN_FN(vkCmdBeginRenderPass2KHR);
+    VULKAN_FN(vkCmdNextSubpass2KHR);
+    VULKAN_FN(vkCmdEndRenderPass2KHR);
+    #endif
+    
     #ifdef VK_KHR_draw_indirect_count
     VULKAN_FN(vkCmdDrawIndirectCountKHR);
     VULKAN_FN(vkCmdDrawIndexedIndirectCountKHR);
@@ -287,16 +303,32 @@ namespace dxvk::vk {
     VULKAN_FN(vkQueuePresentKHR);
     #endif
 
-    #ifdef VK_KHR_get_memory_requirements2
-    VULKAN_FN(vkGetBufferMemoryRequirements2KHR);
-    VULKAN_FN(vkGetImageMemoryRequirements2KHR);
-    #endif
-
     #ifdef VK_EXT_conditional_rendering
     VULKAN_FN(vkCmdBeginConditionalRenderingEXT);
     VULKAN_FN(vkCmdEndConditionalRenderingEXT);
     #endif
-    
+
+    #ifdef VK_EXT_extended_dynamic_state
+    VULKAN_FN(vkCmdBindVertexBuffers2EXT);
+    VULKAN_FN(vkCmdSetCullModeEXT);
+    VULKAN_FN(vkCmdSetDepthBoundsTestEnableEXT);
+    VULKAN_FN(vkCmdSetDepthCompareOpEXT);
+    VULKAN_FN(vkCmdSetDepthTestEnableEXT);
+    VULKAN_FN(vkCmdSetDepthWriteEnableEXT);
+    VULKAN_FN(vkCmdSetFrontFaceEXT);
+    VULKAN_FN(vkCmdSetPrimitiveTopologyEXT);
+    VULKAN_FN(vkCmdSetScissorWithCountEXT);
+    VULKAN_FN(vkCmdSetStencilOpEXT);
+    VULKAN_FN(vkCmdSetStencilTestEnableEXT);
+    VULKAN_FN(vkCmdSetViewportWithCountEXT);
+    #endif
+
+    #ifdef VK_EXT_full_screen_exclusive
+    VULKAN_FN(vkAcquireFullScreenExclusiveModeEXT);
+    VULKAN_FN(vkReleaseFullScreenExclusiveModeEXT);
+    VULKAN_FN(vkGetDeviceGroupSurfacePresentModes2EXT);
+    #endif
+
     #ifdef VK_EXT_host_query_reset
     VULKAN_FN(vkResetQueryPoolEXT);
     #endif

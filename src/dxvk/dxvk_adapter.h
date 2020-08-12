@@ -27,7 +27,7 @@ namespace dxvk {
    */
   struct DxvkAdapterMemoryHeapInfo {
     VkMemoryHeapFlags heapFlags;
-    VkDeviceSize memoryAvailable;
+    VkDeviceSize memoryBudget;
     VkDeviceSize memoryAllocated;
   };
 
@@ -40,6 +40,14 @@ namespace dxvk {
   struct DxvkAdapterMemoryInfo {
     uint32_t                  heapCount;
     DxvkAdapterMemoryHeapInfo heaps[VK_MAX_MEMORY_HEAPS];
+  };
+
+  /**
+   * \brief Retrieves queue indices
+   */
+  struct DxvkAdapterQueueIndices {
+    uint32_t graphics;
+    uint32_t transfer;
   };
   
   /**
@@ -54,7 +62,7 @@ namespace dxvk {
   public:
     
     DxvkAdapter(
-            DxvkInstance*       instance,
+      const Rc<vk::InstanceFn>& vki,
             VkPhysicalDevice    handle);
     ~DxvkAdapter();
     
@@ -73,12 +81,6 @@ namespace dxvk {
     VkPhysicalDevice handle() const {
       return m_handle;
     }
-    
-    /**
-     * \brief Vulkan instance
-     * \returns Vulkan instance
-     */
-    Rc<DxvkInstance> instance() const;
     
     /**
      * \brief Physical device properties
@@ -162,16 +164,10 @@ namespace dxvk {
       VkImageFormatProperties&  properties) const;
     
     /**
-     * \brief Graphics queue family index
-     * \returns Graphics queue family index
+     * \brief Retrieves queue family indices
+     * \returns Indices for all queue families
      */
-    uint32_t graphicsQueueFamily() const;
-    
-    /**
-     * \brief Presentation queue family index
-     * \returns Presentation queue family index
-     */
-    uint32_t presentQueueFamily() const;
+    DxvkAdapterQueueIndices findQueueFamilies() const;
     
     /**
      * \brief Tests whether all required features are supported
@@ -197,12 +193,12 @@ namespace dxvk {
      * \brief Creates a DXVK device
      * 
      * Creates a logical device for this adapter.
-     * \param [in] clientApi Name of the client API
+     * \param [in] instance Parent instance
      * \param [in] enabledFeatures Device features
      * \returns Device handle
      */
     Rc<DxvkDevice> createDevice(
-            std::string         clientApi,
+      const Rc<DxvkInstance>&   instance,
             DxvkDeviceFeatures  enabledFeatures);
     
     /**
@@ -253,7 +249,6 @@ namespace dxvk {
     
   private:
     
-    DxvkInstance*       m_instance;
     Rc<vk::InstanceFn>  m_vki;
     VkPhysicalDevice    m_handle;
 
@@ -273,8 +268,14 @@ namespace dxvk {
     void queryDeviceInfo();
     void queryDeviceFeatures();
     void queryDeviceQueues();
+
+    uint32_t findQueueFamily(
+            VkQueueFlags          mask,
+            VkQueueFlags          flags) const;
     
     static void logNameList(const DxvkNameList& names);
+    static void logFeatures(const DxvkDeviceFeatures& features);
+    static void logQueueFamilies(const DxvkAdapterQueueIndices& queues);
     
   };
   

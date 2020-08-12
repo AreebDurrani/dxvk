@@ -64,31 +64,6 @@ namespace dxvk {
   }
   
   
-  VkMemoryPropertyFlags GetMemoryFlagsForUsage(D3D11_USAGE Usage) {
-    VkMemoryPropertyFlags memoryFlags = 0;
-    
-    switch (Usage) {
-      case D3D11_USAGE_DEFAULT:
-      case D3D11_USAGE_IMMUTABLE:
-        memoryFlags |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-        break;
-      
-      case D3D11_USAGE_DYNAMIC:
-        memoryFlags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-                    |  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        break;
-      
-      case D3D11_USAGE_STAGING:
-        memoryFlags |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-                    |  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-                    |  VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
-        break;
-    }
-    
-    return memoryFlags;
-  }
-
-
   VkShaderStageFlagBits GetShaderStage(DxbcProgramType ProgramType) {
     switch (ProgramType) {
       case DxbcProgramType::VertexShader:   return VK_SHADER_STAGE_VERTEX_BIT;
@@ -101,34 +76,6 @@ namespace dxvk {
     }
   }
   
-
-  VkBufferUsageFlags GetBufferUsageFlags(UINT BindFlags) {
-    VkBufferUsageFlags usage = 0;
-
-    if (BindFlags & D3D11_BIND_SHADER_RESOURCE)
-      usage |= VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT;
-    if (BindFlags & D3D11_BIND_UNORDERED_ACCESS)
-      usage |= VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT;
-    
-    return 0;
-  }
-  
-
-  VkImageUsageFlags GetImageUsageFlags(UINT BindFlags) {
-    VkImageUsageFlags usage = 0;
-
-    if (BindFlags & D3D11_BIND_DEPTH_STENCIL)
-      usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    if (BindFlags & D3D11_BIND_RENDER_TARGET)
-      usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    if (BindFlags & D3D11_BIND_SHADER_RESOURCE)
-      usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
-    if (BindFlags & D3D11_BIND_UNORDERED_ACCESS)
-      usage |= VK_IMAGE_USAGE_STORAGE_BIT;
-    
-    return usage;
-  }
-
 
   VkFormatFeatureFlags GetBufferFormatFeatures(UINT BindFlags) {
     VkFormatFeatureFlags features = 0;

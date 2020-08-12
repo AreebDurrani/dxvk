@@ -77,6 +77,15 @@ namespace dxvk {
     }
     
     /**
+     * \brief Allocates a new ID
+     *
+     * Returns a new valid ID and increments the
+     * maximum ID count stored in the header.
+     * \returns The new SPIR-V ID
+     */
+    uint32_t allocId();
+    
+    /**
      * \brief Merges two code buffers
      * 
      * This is useful to generate declarations or
@@ -101,7 +110,7 @@ namespace dxvk {
      * \param [in] wordCount Number of words
      */
     void putIns(spv::Op opCode, uint16_t wordCount);
-    
+
     /**
      * \brief Appends a 32-bit integer to the buffer
      * \param [in] value The number to add
@@ -136,9 +145,20 @@ namespace dxvk {
     
     /**
      * \brief Adds the header to the buffer
+     *
+     * \param [in] version SPIR-V version
      * \param [in] boundIds Number of bound IDs
      */
-    void putHeader(uint32_t boundIds);
+    void putHeader(uint32_t version, uint32_t boundIds);
+
+    /**
+     * \brief Erases given number of dwords
+     *
+     * Removes data from the code buffer, starting
+     * at the current insertion offset.
+     * \param [in] size Number of words to remove
+     */
+    void erase(size_t size);
     
     /**
      * \brief Computes length of a literal string

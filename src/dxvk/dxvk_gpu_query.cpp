@@ -112,7 +112,7 @@ namespace dxvk {
     if (result == VK_NOT_READY)
       return DxvkGpuQueryStatus::Pending;
     else if (result != VK_SUCCESS)
-      return DxvkGpuQueryStatus::Failed;;
+      return DxvkGpuQueryStatus::Failed;
     
     // Add numbers to the destination structure
     switch (m_type) {
@@ -287,9 +287,8 @@ namespace dxvk {
 
 
 
-  DxvkGpuQueryManager::DxvkGpuQueryManager(
-    const Rc<DxvkGpuQueryPool>& pool)
-  : m_pool(pool), m_activeTypes(0) {
+  DxvkGpuQueryManager::DxvkGpuQueryManager(DxvkGpuQueryPool& pool)
+  : m_pool(&pool), m_activeTypes(0) {
 
   }
 
@@ -348,7 +347,7 @@ namespace dxvk {
       handle.queryPool,
       handle.queryId);
     
-    cmd->trackResource(query);
+    cmd->trackResource<DxvkAccess::None>(query);
   }
 
 
@@ -419,7 +418,7 @@ namespace dxvk {
         handle.queryId);
     }
 
-    cmd->trackResource(query);
+    cmd->trackResource<DxvkAccess::None>(query);
   }
   
   

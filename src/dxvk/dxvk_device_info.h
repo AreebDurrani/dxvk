@@ -13,11 +13,14 @@ namespace dxvk {
    * so before using them, check whether they are supported.
    */
   struct DxvkDeviceInfo {
-    VkPhysicalDeviceProperties2KHR                      core;
+    VkPhysicalDeviceProperties2                         core;
     VkPhysicalDeviceIDProperties                        coreDeviceId;
     VkPhysicalDeviceSubgroupProperties                  coreSubgroup;
+    VkPhysicalDeviceCustomBorderColorPropertiesEXT      extCustomBorderColor;
+    VkPhysicalDeviceRobustness2PropertiesEXT            extRobustness2;
     VkPhysicalDeviceTransformFeedbackPropertiesEXT      extTransformFeedback;
     VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT extVertexAttributeDivisor;
+    VkPhysicalDeviceDepthStencilResolvePropertiesKHR    khrDepthStencilResolve;
     VkPhysicalDeviceDriverPropertiesKHR                 khrDeviceDriverProperties;
   };
 
@@ -30,13 +33,19 @@ namespace dxvk {
    * extended features will be marked as unsupported.
    */
   struct DxvkDeviceFeatures {
-    VkPhysicalDeviceFeatures2KHR                        core;
-    VkPhysicalDeviceConditionalRenderingFeaturesEXT     extConditionalRendering;
-    VkPhysicalDeviceDepthClipEnableFeaturesEXT          extDepthClipEnable;
-    VkPhysicalDeviceHostQueryResetFeaturesEXT           extHostQueryReset;
-    VkPhysicalDeviceMemoryPriorityFeaturesEXT           extMemoryPriority;
-    VkPhysicalDeviceTransformFeedbackFeaturesEXT        extTransformFeedback;
-    VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT   extVertexAttributeDivisor;
+    VkPhysicalDeviceFeatures2                                 core;
+    VkPhysicalDeviceShaderDrawParametersFeatures              shaderDrawParameters;
+    VkPhysicalDevice4444FormatsFeaturesEXT                    ext4444Formats;
+    VkPhysicalDeviceConditionalRenderingFeaturesEXT           extConditionalRendering;
+    VkPhysicalDeviceCustomBorderColorFeaturesEXT              extCustomBorderColor;
+    VkPhysicalDeviceDepthClipEnableFeaturesEXT                extDepthClipEnable;
+    VkPhysicalDeviceExtendedDynamicStateFeaturesEXT           extExtendedDynamicState;
+    VkPhysicalDeviceHostQueryResetFeaturesEXT                 extHostQueryReset;
+    VkPhysicalDeviceMemoryPriorityFeaturesEXT                 extMemoryPriority;
+    VkPhysicalDeviceRobustness2FeaturesEXT                    extRobustness2;
+    VkPhysicalDeviceShaderDemoteToHelperInvocationFeaturesEXT extShaderDemoteToHelperInvocation;
+    VkPhysicalDeviceTransformFeedbackFeaturesEXT              extTransformFeedback;
+    VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT         extVertexAttributeDivisor;
   };
 
 }

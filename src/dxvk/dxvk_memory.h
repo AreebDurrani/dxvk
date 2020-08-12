@@ -43,7 +43,6 @@ namespace dxvk {
    */
   struct DxvkMemoryHeap {
     VkMemoryHeap      properties;
-    VkDeviceSize      chunkSize;
     DxvkMemoryStats   stats;
   };
 
@@ -61,6 +60,8 @@ namespace dxvk {
 
     VkMemoryType      memType;
     uint32_t          memTypeId;
+
+    VkDeviceSize      chunkSize;
 
     std::vector<Rc<DxvkMemoryChunk>> chunks;
   };
@@ -119,6 +120,15 @@ namespace dxvk {
      */
     void* mapPtr(VkDeviceSize offset) const {
       return reinterpret_cast<char*>(m_mapPtr) + offset;
+    }
+
+    /**
+     * \brief Returns length of memory allocated
+     * 
+     * \returns Memory size
+     */
+    VkDeviceSize length() const {
+      return m_length;
     }
 
     /**
@@ -215,7 +225,7 @@ namespace dxvk {
    * Allocates device memory for Vulkan resources.
    * Memory objects will be destroyed automatically.
    */
-  class DxvkMemoryAllocator : public RcObject {
+  class DxvkMemoryAllocator {
     friend class DxvkMemory;
     friend class DxvkMemoryChunk;
   public:
@@ -239,6 +249,7 @@ namespace dxvk {
      * \brief Allocates device memory
      * 
      * \param [in] req Memory requirements
+     * \param [in] dedAllocReq Dedicated allocation requirements
      * \param [in] dedAllocInfo Dedicated allocation info
      * \param [in] flags Memory type flags
      * \param [in] priority Device-local memory priority
@@ -246,18 +257,22 @@ namespace dxvk {
      */
     DxvkMemory alloc(
       const VkMemoryRequirements*             req,
-      const VkMemoryDedicatedAllocateInfoKHR* dedAllocInfo,
+      const VkMemoryDedicatedRequirements&    dedAllocReq,
+      const VkMemoryDedicatedAllocateInfo&    dedAllocInfo,
             VkMemoryPropertyFlags             flags,
             float                             priority);
     
     /**
      * \brief Queries memory stats
      * 
-     * Returns the total amount of device memory
-     * allocated and used by all available heaps.
-     * \returns Global memory stats
+     * Returns the total amount of memory
+     * allocated and used for a given heap.
+     * \param [in] heap Heap index
+     * \returns Memory stats for this heap
      */
-    DxvkMemoryStats getMemoryStats();
+    DxvkMemoryStats getMemoryStats(uint32_t heap) const {
+      return m_memHeaps[heap].stats;
+    }
     
   private:
 
@@ -269,10 +284,12 @@ namespace dxvk {
     std::mutex                                      m_mutex;
     std::array<DxvkMemoryHeap, VK_MAX_MEMORY_HEAPS> m_memHeaps;
     std::array<DxvkMemoryType, VK_MAX_MEMORY_TYPES> m_memTypes;
+
+    bool m_restrictAllocations;
     
     DxvkMemory tryAlloc(
       const VkMemoryRequirements*             req,
-      const VkMemoryDedicatedAllocateInfoKHR* dedAllocInfo,
+      const VkMemoryDedicatedAllocateInfo*    dedAllocInfo,
             VkMemoryPropertyFlags             flags,
             float                             priority);
     
@@ -282,14 +299,14 @@ namespace dxvk {
             VkDeviceSize                      size,
             VkDeviceSize                      align,
             float                             priority,
-      const VkMemoryDedicatedAllocateInfoKHR* dedAllocInfo);
+      const VkMemoryDedicatedAllocateInfo*    dedAllocInfo);
     
     DxvkDeviceMemory tryAllocDeviceMemory(
             DxvkMemoryType*                   type,
             VkMemoryPropertyFlags             flags,
             VkDeviceSize                      size,
             float                             priority,
-      const VkMemoryDedicatedAllocateInfoKHR* dedAllocInfo);
+      const VkMemoryDedicatedAllocateInfo*    dedAllocInfo);
     
     void free(
       const DxvkMemory&           memory);
@@ -305,7 +322,7 @@ namespace dxvk {
             DxvkDeviceMemory      memory);
     
     VkDeviceSize pickChunkSize(
-            VkDeviceSize          heapSize) const;
+            uint32_t              memTypeId) const;
 
   };
   

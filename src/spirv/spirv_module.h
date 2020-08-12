@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unordered_set>
+
 #include "spirv_code_buffer.h"
 
 namespace dxvk {
@@ -26,6 +28,10 @@ namespace dxvk {
     uint32_t sSampleId     = 0;
     uint32_t sMinLod       = 0;
   };
+
+  constexpr uint32_t spvVersion(uint32_t major, uint32_t minor) {
+    return (major << 16) | (minor << 8);
+  }
   
   /**
    * \brief SPIR-V module
@@ -39,7 +45,8 @@ namespace dxvk {
     
   public:
     
-    SpirvModule();
+    explicit SpirvModule(uint32_t version);
+
     ~SpirvModule();
     
     SpirvCodeBuffer compile() const;
@@ -137,6 +144,12 @@ namespace dxvk {
             int32_t                 y,
             int32_t                 z,
             int32_t                 w);
+
+    uint32_t constvec4b32(
+            bool                    x,
+            bool                    y,
+            bool                    z,
+            bool                    w);
     
     uint32_t constvec4u32(
             uint32_t                x,
@@ -158,12 +171,38 @@ namespace dxvk {
             float                   y,
             float                   z,
             float                   w);
+
+    uint32_t constfReplicant(
+            float                   replicant,
+            uint32_t                count);
+
+    uint32_t constbReplicant(
+            bool                    replicant,
+            uint32_t                count);
+
+    uint32_t constiReplicant(
+            int32_t                 replicant,
+            uint32_t                count);
+
+    uint32_t constuReplicant(
+            int32_t                 replicant,
+            uint32_t                count);
     
     uint32_t constComposite(
             uint32_t                typeId,
             uint32_t                constCount,
       const uint32_t*               constIds);
     
+    uint32_t constUndef(
+            uint32_t                typeId);
+    
+    uint32_t lateConst32(
+            uint32_t                typeId);
+
+    void setLateConst(
+            uint32_t                constId,
+      const uint32_t*               argIds);
+
     uint32_t specConstBool(
             bool                    v);
     
@@ -221,6 +260,16 @@ namespace dxvk {
             uint32_t                structId,
             uint32_t                memberId,
             spv::BuiltIn            builtIn);
+
+    void memberDecorate(
+            uint32_t                structId,
+            uint32_t                memberId,
+            spv::Decoration         decoration);
+
+    void memberDecorateMatrixStride(
+            uint32_t                structId,
+            uint32_t                memberId,
+            uint32_t                stride);
     
     void memberDecorateOffset(
             uint32_t                structId,
@@ -310,7 +359,7 @@ namespace dxvk {
             uint32_t                parameterType);
     
     void functionEnd();
-    
+
     uint32_t opAccessChain(
             uint32_t                resultType,
             uint32_t                composite,
@@ -595,6 +644,17 @@ namespace dxvk {
     uint32_t opFAbs(
             uint32_t                resultType,
             uint32_t                operand);
+
+    uint32_t opFMix(
+            uint32_t                resultType,
+            uint32_t                x,
+            uint32_t                y,
+            uint32_t                a);
+
+  uint32_t opCross(
+            uint32_t                resultType,
+            uint32_t                x,
+            uint32_t                y);
     
     uint32_t opIAdd(
             uint32_t                resultType,
@@ -655,6 +715,29 @@ namespace dxvk {
             uint32_t                resultType,
             uint32_t                vector,
             uint32_t                scalar);
+
+    uint32_t opMatrixTimesMatrix(
+            uint32_t                resultType,
+            uint32_t                a,
+            uint32_t                b);
+
+    uint32_t opMatrixTimesVector(
+            uint32_t                resultType,
+            uint32_t                matrix,
+            uint32_t                vector);
+
+    uint32_t opVectorTimesMatrix(
+            uint32_t                resultType,
+            uint32_t                vector,
+            uint32_t                matrix);
+
+    uint32_t opTranspose(
+            uint32_t                resultType,
+            uint32_t                matrix);
+
+    uint32_t opInverse(
+            uint32_t                resultType,
+            uint32_t                matrix);
     
     uint32_t opFFma(
             uint32_t                resultType,
@@ -838,8 +921,25 @@ namespace dxvk {
     uint32_t opInverseSqrt(
             uint32_t                resultType,
             uint32_t                operand);
+
+    uint32_t opNormalize(
+            uint32_t                resultType,
+            uint32_t                operand);
+
+    uint32_t opReflect(
+            uint32_t                resultType,
+            uint32_t                incident,
+            uint32_t                normal);
+
+    uint32_t opLength(
+            uint32_t                resultType,
+            uint32_t                operand);
     
     uint32_t opExp2(
+            uint32_t                resultType,
+            uint32_t                operand);
+
+    uint32_t opExp(
             uint32_t                resultType,
             uint32_t                operand);
     
@@ -893,6 +993,10 @@ namespace dxvk {
             uint32_t                condition,
             uint32_t                operand1,
             uint32_t                operand2);
+
+    uint32_t opIsNan(
+            uint32_t                resultType,
+            uint32_t                operand);
     
     uint32_t opFunctionCall(
             uint32_t                resultType,
@@ -924,6 +1028,10 @@ namespace dxvk {
             uint32_t                resultType,
             uint32_t                interpolant,
             uint32_t                offset);
+
+    uint32_t opImage(
+            uint32_t                resultType,
+            uint32_t                sampledImage);
     
     uint32_t opImageRead(
             uint32_t                resultType,
@@ -1053,12 +1161,14 @@ namespace dxvk {
             uint32_t                operation,
             uint32_t                ballot);
     
-    uint32_t opGroupNonUniformLogicalAnd(
+    uint32_t opGroupNonUniformElect(
+            uint32_t                resultType,
+            uint32_t                execution);
+    
+    uint32_t opGroupNonUniformBroadcastFirst(
             uint32_t                resultType,
             uint32_t                execution,
-            uint32_t                operation,
-            uint32_t                value,
-            uint32_t                clusterSize);
+            uint32_t                value);
     
     void opControlBarrier(
             uint32_t                execution,
@@ -1100,6 +1210,8 @@ namespace dxvk {
     void opReturn();
     
     void opKill();
+
+    void opDemoteToHelperInvocation();
     
     void opEmitVertex(
             uint32_t                streamId);
@@ -1109,6 +1221,7 @@ namespace dxvk {
     
   private:
     
+    uint32_t m_version;
     uint32_t m_id             = 1;
     uint32_t m_instExtGlsl450 = 0;
     
@@ -1123,6 +1236,8 @@ namespace dxvk {
     SpirvCodeBuffer m_typeConstDefs;
     SpirvCodeBuffer m_variables;
     SpirvCodeBuffer m_code;
+
+    std::unordered_set<uint32_t> m_lateConsts;
     
     uint32_t defType(
             spv::Op                 op, 

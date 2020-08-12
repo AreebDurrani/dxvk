@@ -36,7 +36,6 @@ namespace dxvk {
    */
   struct DxbcConstantBuffer {
     uint32_t varId  = 0;
-    uint32_t specId = 0;
     uint32_t size   = 0;
   };
   
@@ -81,6 +80,7 @@ namespace dxvk {
     uint32_t          colorTypeId   = 0;
     uint32_t          depthTypeId   = 0;
     uint32_t          structStride  = 0;
+    uint32_t          structAlign   = 0;
   };
   
   
@@ -100,6 +100,7 @@ namespace dxvk {
     uint32_t          sampledTypeId = 0;
     uint32_t          imageTypeId   = 0;
     uint32_t          structStride  = 0;
+    uint32_t          structAlign   = 0;
   };
   
   
@@ -183,6 +184,15 @@ namespace dxvk {
     
     static DxbcRegMask select(uint32_t n) {
       return DxbcRegMask(n == 0, n == 1, n == 2, n == 3);
+    }
+
+    std::string maskString() const {
+      std::string out = "";
+      out += (m_mask & 0x1) ? "x" : "";
+      out += (m_mask & 0x2) ? "y" : "";
+      out += (m_mask & 0x4) ? "z" : "";
+      out += (m_mask & 0x8) ? "w" : "";
+      return out;
     }
     
   private:
@@ -315,6 +325,10 @@ namespace dxvk {
     
     DxbcUavFlags uavFlags() const {
       return DxbcUavFlags(bit::extract(m_bits, 16, 16));
+    }
+
+    DxbcConstantBufferAccessType accessType() const {
+      return DxbcConstantBufferAccessType(bit::extract(m_bits, 11, 11));
     }
     
     uint32_t controlPointCount() const {

@@ -3,6 +3,8 @@
 #include "dxvk_resource.h"
 
 namespace dxvk {
+
+  class DxvkDevice;
   
   /**
    * \brief Sampler properties
@@ -51,7 +53,7 @@ namespace dxvk {
   public:
     
     DxvkSampler(
-      const Rc<vk::DeviceFn>&       vkd,
+            DxvkDevice*             device,
       const DxvkSamplerCreateInfo&  info);
     ~DxvkSampler();
     
@@ -63,21 +65,14 @@ namespace dxvk {
       return m_sampler;
     }
     
-    /**
-     * \brief Sampler parameters
-     * \returns Sampler parameters
-     */
-    const DxvkSamplerCreateInfo& info() const {
-      return m_info;
-    }
-    
   private:
     
     Rc<vk::DeviceFn>      m_vkd;
-    DxvkSamplerCreateInfo m_info;
     VkSampler             m_sampler = VK_NULL_HANDLE;
 
-    VkBorderColor getBorderColor(VkClearColorValue borderColor) const;
+    static VkBorderColor getBorderColor(
+      const Rc<DxvkDevice>&         device,
+      const DxvkSamplerCreateInfo&  info);
     
   };
   

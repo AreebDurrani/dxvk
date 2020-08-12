@@ -24,10 +24,10 @@ namespace dxvk {
     std::string toString() const;
     
     uint32_t dword(uint32_t id) const {
-      return uint32_t(m_digest[4 + id + 0]) <<  0
-           | uint32_t(m_digest[4 + id + 1]) <<  8
-           | uint32_t(m_digest[4 + id + 2]) << 16
-           | uint32_t(m_digest[4 + id + 3]) << 24;
+      return uint32_t(m_digest[4 * id + 0]) <<  0
+           | uint32_t(m_digest[4 * id + 1]) <<  8
+           | uint32_t(m_digest[4 * id + 2]) << 16
+           | uint32_t(m_digest[4 * id + 3]) << 24;
     }
     
     bool operator == (const Sha1Hash& other) const {
@@ -35,6 +35,10 @@ namespace dxvk {
         this->m_digest.data(),
         other.m_digest.data(),
         other.m_digest.size());
+    }
+    
+    bool operator != (const Sha1Hash& other) const {
+      return !this->operator == (other);
     }
     
     static Sha1Hash compute(

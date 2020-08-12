@@ -43,7 +43,7 @@ namespace dxvk {
           VkDevice*             pDevice) {
     auto device   = m_device->GetDXVKDevice();
     auto adapter  = device->adapter();
-    auto instance = adapter->instance();
+    auto instance = device->instance();
     
     if (pDevice != nullptr)
       *pDevice = device->handle();
@@ -60,7 +60,7 @@ namespace dxvk {
           VkQueue*              pQueue,
           uint32_t*             pQueueFamilyIndex) {
     auto device = static_cast<D3D11Device*>(m_device)->GetDXVKDevice();
-    DxvkDeviceQueue queue = device->graphicsQueue();
+    DxvkDeviceQueue queue = device->queues().graphics;
     
     if (pQueue != nullptr)
       *pQueue = queue.queueHandle;

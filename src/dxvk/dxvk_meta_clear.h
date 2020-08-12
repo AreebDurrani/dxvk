@@ -6,6 +6,8 @@
 #include "../spirv/spirv_code_buffer.h"
 
 namespace dxvk {
+
+  class DxvkDevice;
   
   /**
    * \brief Clear args
@@ -15,9 +17,8 @@ namespace dxvk {
    */
   struct DxvkMetaClearArgs {
     VkClearColorValue clearValue;
-    
-    alignas(16) VkOffset3D offset;
-    alignas(16) VkExtent3D extent;
+    VkOffset3D offset; uint32_t pad1;
+    VkExtent3D extent; uint32_t pad2;
   };
   
   
@@ -42,11 +43,11 @@ namespace dxvk {
    * compute pipelines that are going to be used
    * for clear operations.
    */
-  class DxvkMetaClearObjects : public RcObject {
+  class DxvkMetaClearObjects {
     
   public:
     
-    DxvkMetaClearObjects(const Rc<vk::DeviceFn>& vkd);
+    DxvkMetaClearObjects(const DxvkDevice* device);
     ~DxvkMetaClearObjects();
     
     /**

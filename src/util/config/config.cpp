@@ -1,6 +1,7 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <regex>
 
 #include "config.h"
 
@@ -10,145 +11,375 @@
 
 namespace dxvk {
 
-  const static std::unordered_map<std::string, Config> g_appDefaults = {{
-    /* Anno 1800                                  */
-    { "Anno1800.exe", {{
-      { "d3d11.allowMapFlagNoWait",         "True" }
-    }} },
+  const static std::vector<std::pair<const char*, Config>> g_appDefaults = {{
     /* Assassin's Creed Syndicate: amdags issues  */
-    { "ACS.exe", {{
+    { R"(\\ACS\.exe$)", {{
       { "dxgi.customVendorId",              "10de" },
     }} },
-    /* Dishonored 2                               */
-    { "Dishonored2.exe", {{
-      { "d3d11.allowMapFlagNoWait",         "True" }
-    }} },
     /* Dissidia Final Fantasy NT Free Edition */
-    { "dffnt.exe", {{
+    { R"(\\dffnt\.exe$)", {{
       { "dxgi.deferSurfaceCreation",        "True" },
     }} },
     /* Elite Dangerous: Compiles weird shaders    *
      * when running on AMD hardware               */
-    { "EliteDangerous64.exe", {{
+    { R"(\\EliteDangerous64\.exe$)", {{
       { "dxgi.customVendorId",              "10de" },
     }} },
     /* The Vanishing of Ethan Carter Redux        */
-    { "EthanCarter-Win64-Shipping.exe", {{
+    { R"(\\EthanCarter-Win64-Shipping\.exe$)", {{
       { "dxgi.customVendorId",              "10de" },
     }} },
     /* The Evil Within: Submits command lists     * 
      * multiple times                             */
-    { "EvilWithin.exe", {{
-      { "d3d11.dcSingleUseMode",            "False" },
-    }} },
-    /* The Evil Within Demo                       */
-    { "EvilWithinDemo.exe", {{
+    { R"(\\EvilWithin(Demo)?\.exe$)", {{
       { "d3d11.dcSingleUseMode",            "False" },
     }} },
     /* Far Cry 3: Assumes clear(0.5) on an UNORM  *
      * format to result in 128 on AMD and 127 on  *
-     * Nvidia. Most Vulkan drivers clear to 127,  *
-     * assuming higher values causes artifacts.   */
-    { "farcry3_d3d11.exe", {{
-      { "dxgi.customVendorId",              "10de" },
-    }} },
-    { "fc3_blooddragon_d3d11.exe", {{
-      { "dxgi.customVendorId",              "10de" },
+     * Nvidia. We assume that the Vulkan drivers  *
+     * match the clear behaviour of D3D11.        */
+    { R"(\\(farcry3|fc3_blooddragon)_d3d11\.exe$)", {{
+      { "dxgi.nvapiHack",                   "False" },
     }} },
     /* Far Cry 4: Same as Far Cry 3               */
-    { "FarCry4.exe", {{
-      { "dxgi.customVendorId",              "10de" },
-    }} },
-    /* Far Cry 5: Avoid CPU <-> GPU sync          */
-    { "FarCry5.exe", {{
-      { "d3d11.allowMapFlagNoWait",         "True" }
+    { R"(\\FarCry4\.exe$)", {{
+      { "dxgi.nvapiHack",                   "False" },
     }} },
     /* Far Cry Primal: Nvidia performance         */
-    { "FCPrimal.exe", {{
+    { R"(\\FCPrimal\.exe$)", {{
       { "dxgi.nvapiHack",                   "False" },
     } }},
     /* Frostpunk: Renders one frame with D3D9     *
      * after creating the DXGI swap chain         */
-    { "Frostpunk.exe", {{
+    { R"(\\Frostpunk\.exe$)", {{
       { "dxgi.deferSurfaceCreation",        "True" },
     }} },
     /* Nioh: See Frostpunk, apparently?           */
-    { "nioh.exe", {{
+    { R"(\\nioh\.exe$)", {{
       { "dxgi.deferSurfaceCreation",        "True" },
     }} },
     /* Quantum Break: Mever initializes shared    *
      * memory in one of its compute shaders       */
-    { "QuantumBreak.exe", {{
+    { R"(\\QuantumBreak\.exe$)", {{
       { "d3d11.zeroInitWorkgroupMemory",    "True" },
     }} },
     /* Anno 2205: Random crashes with state cache */
-    { "anno2205.exe", {{
+    { R"(\\anno2205\.exe$)", {{
       { "dxvk.enableStateCache",            "False" },
     }} },
-    /* Fifa '19: Binds typed buffer SRV to shader *
+    /* Fifa '19+: Binds typed buffer SRV to shader *
      * that expects raw/structured buffer SRV     */
-    { "FIFA19.exe", {{
+    { R"(\\FIFA(19|[2-9][0-9])(_demo)?\.exe$)", {{
       { "dxvk.useRawSsbo",                  "True" },
     }} },
     /* Final Fantasy XIV: Fix random black blocks */
-    { "ffxiv_dx11.exe", {{
-      { "d3d11.strictDivision",             "True" },
+    { R"(\\ffxiv_dx11\.exe$)", {{
+      { "d3d11.enableRtOutputNanFixup",     "True" },
     }} },
-    /* Fifa '19 Demo                              */
-    { "FIFA19_demo.exe", {{
-      { "dxvk.useRawSsbo",                  "True" },
-    }} },
-    /* Resident Evil 2: Improve GPU performance   */
-    { "re2.exe", {{
-      { "d3d11.relaxedBarriers",            "True" },
-    }} },
-    /* Resident Evil 7                            */
-    { "re7.exe", {{
+    /* Resident Evil 2/3: Ignore WaW hazards      */
+    { R"(\\re(2|3|3demo)\.exe$)", {{
       { "d3d11.relaxedBarriers",            "True" },
     }} },
     /* Devil May Cry 5                            */
-    { "DevilMayCry5.exe", {{
+    { R"(\\DevilMayCry5\.exe$)", {{
       { "d3d11.relaxedBarriers",            "True" },
     }} },
     /* Call of Duty WW2                           */
-    { "s2_sp64_ship.exe", {{
+    { R"(\\s2_sp64_ship\.exe$)", {{
       { "dxgi.nvapiHack",                   "False" },
     }} },
     /* Need for Speed 2015                        */
-    { "NFS16.exe", {{
+    { R"(\\NFS16\.exe$)", {{
       { "dxgi.nvapiHack",                   "False" },
     }} },
     /* Mass Effect Andromeda                      */
-    { "MassEffectAndromeda.exe", {{
+    { R"(\\MassEffectAndromeda\.exe$)", {{
       { "dxgi.nvapiHack",                   "False" },
     }} },
-    /* Mirror`s Edge Catalyst                     */
-    { "MirrorsEdgeCatalyst.exe", {{
-      { "dxgi.nvapiHack",                   "False" },
-    }} },
-    /* Mirror`s Edge Catalyst Trial               */
-    { "MirrorsEdgeCatalystTrial.exe", {{
-      { "dxgi.nvapiHack",                   "False" },
+    /* Mirror`s Edge Catalyst: Crashes on AMD     */
+    { R"(\\MirrorsEdgeCatalyst(Trial)?\.exe$)", {{
+      { "dxgi.customVendorId",              "10de" },
     }} },
     /* Star Wars Battlefront (2015)               */
-    { "starwarsbattlefront.exe", {{
-      { "dxgi.nvapiHack",                   "False" },
-    }} },
-    /* Star Wars Battlefront (2015) Trial         */
-    { "starwarsbattlefronttrial.exe", {{
+    { R"(\\starwarsbattlefront(trial)?\.exe$)", {{
       { "dxgi.nvapiHack",                   "False" },
     }} },
     /* Dark Souls Remastered                      */
-    { "DarkSoulsRemastered.exe", {{
+    { R"(\\DarkSoulsRemastered\.exe$)", {{
       { "d3d11.constantBufferRangeCheck",   "True" },
     }} },
     /* Grim Dawn                                  */
-    { "Grim Dawn.exe", {{
+    { R"(\\Grim Dawn\.exe$)", {{
       { "d3d11.constantBufferRangeCheck",   "True" },
     }} },
     /* NieR:Automata                              */
-    { "NieRAutomata.exe", {{
+    { R"(\\NieRAutomata\.exe$)", {{
       { "d3d11.constantBufferRangeCheck",   "True" },
+    }} },
+    /* SteamVR performance test                   */
+    { R"(\\vr\.exe$)", {{
+      { "d3d11.dcSingleUseMode",            "False" },
+    }} },
+    /* Hitman 2 - requires AGS library            */
+    { R"(\\HITMAN2\.exe$)", {{
+      { "dxgi.customVendorId",              "10de" },
+    }} },
+    /* Modern Warfare Remastered                  */
+    { R"(\\h1_[ms]p64_ship\.exe$)", {{
+      { "dxgi.customVendorId",              "10de" },
+    }} },
+    /* Titan Quest                                */
+    { R"(\\TQ\.exe$)", {{
+      { "d3d11.constantBufferRangeCheck",   "True" },
+    }} },
+    /* Saints Row IV                              */
+    { R"(\\SaintsRowIV\.exe$)", {{
+      { "d3d11.constantBufferRangeCheck",   "True" },
+      { "d3d11.invariantPosition",          "True" },
+    }} },
+    /* Saints Row: The Third                      */
+    { R"(\\SaintsRowTheThird_DX11\.exe$)", {{
+      { "d3d11.constantBufferRangeCheck",   "True" },
+      { "d3d11.invariantPosition",          "True" },
+    }} },
+    /* Metal Gear Solid 5                         */
+    { R"(\\mgsvtpp\.exe$)", {{
+      { "dxvk.enableOpenVR",                "False" },
+    }} },
+    /* Raft                                       */
+    { R"(\\Raft\.exe$)", {{
+      { "dxvk.enableOpenVR",                "False" },
+    }} },
+    /* Crysis 3 - slow if it notices AMD card     */
+    { R"(\\Crysis3\.exe$)", {{
+      { "dxgi.customVendorId",              "10de" },
+    }} },
+    /* Atelier series - games try to render video *
+     * with a D3D9 swap chain over the DXGI swap  *
+     * chain, which breaks D3D11 presentation     */
+    { R"(\\Atelier_(Ayesha|Escha_and_Logy|Shallie)(_EN)?\.exe$)", {{
+      { "d3d9.deferSurfaceCreation",        "True" },
+    }} },
+    /* Atelier Rorona/Totori/Meruru               */
+    { R"(\\A(11R|12V|13V)_x64_Release(_en)?\.exe$)", {{
+      { "d3d9.deferSurfaceCreation",        "True" },
+    }} },
+    /* Just how many of these games are there?    */
+    { R"(\\Atelier_(Lulua|Lydie_and_Suelle|Ryza)\.exe$)", {{
+      { "d3d9.deferSurfaceCreation",        "True" },
+    }} },
+    /* Fairy Tail                                 */
+    { R"(\\FAIRY_TAIL\.exe$)", {{
+      { "d3d9.deferSurfaceCreation",        "True" },
+    }} },
+    /* Star Wars Battlefront II: amdags issues    */
+    { R"(\\starwarsbattlefrontii\.exe$)", {{
+      { "dxgi.customVendorId",              "10de" },
+    }} },
+    /* Entropia Universe                          */
+    { R"(\\Entropia\.exe$)", {{
+      { "d3d11.invariantPosition",          "True" },
+    }} },
+    /* F1 2019 - does not synchronize TGSM access *
+     * in a compute shader, causing artifacts     */
+    { R"(\\F1_2019\.exe$)", {{
+      { "d3d11.forceTgsmBarriers",          "True" },
+    }} },
+    /* Subnautica                                 */
+    { R"(\\Subnautica\.exe$)", {{
+      { "dxvk.enableOpenVR",                "False" },
+    }} },
+    /* Super Monkey Ball: Banana Blitz HD         */
+    { R"(\\SMBBBHD\.exe$)", {{
+      { "d3d11.enableRtOutputNanFixup",     "True" },
+    }} },
+    /* Yooka-Laylee and the Impossible Lair       */
+    { R"(\\YLILWin64\.exe$)", {{
+      { "d3d11.enableRtOutputNanFixup",     "True" },
+    }} },
+    /* Blue Reflection                            */
+    { R"(\\BLUE_REFLECTION\.exe$)", {{
+      { "d3d11.constantBufferRangeCheck",   "True" },
+    }} },
+    /* Secret World Legends                       */
+    { R"(\\SecretWorldLegendsDX11\.exe$)", {{
+      { "d3d11.constantBufferRangeCheck",   "True" },
+    }} },
+    /* Stars End                                  */
+    { R"(\\Stars End\.exe$)", {{
+      { "d3d11.enableRtOutputNanFixup",     "True" },
+    }} },
+    /* Borderlands 3                              */
+    { R"(\\Borderlands3\.exe$)", {{
+      { "d3d11.invariantPosition",          "True" },
+    }} },
+    /* Terminator: Resistance                     */
+    { R"(\\Terminator-Win64-Shipping\.exe$)", {{
+      { "d3d11.invariantPosition",          "True" },
+    }} },
+    /* Star Wars Jedi: Fallen Order               */
+    { R"(\\starwarsjedifallenorder\.exe$)", {{
+      { "d3d11.invariantPosition",          "True" },
+    }} },
+    /* Mafia III: Definitive Edition              */
+    { R"(\\Mafia3DefinitiveEdition\.exe$)", {{
+      { "d3d11.invariantPosition",          "True" },
+    }} },
+    /* Observation                                */
+    { R"(\\Observation\.exe$)", {{
+      { "d3d11.enableRtOutputNanFixup",     "True" },
+    }} },
+
+    /**********************************************/
+    /* D3D9 GAMES                                 */
+    /**********************************************/
+
+    /* A Hat in Time                              */
+    { R"(\\HatinTimeGame\.exe$)", {{
+      { "d3d9.strictPow",                   "False" },
+      { "d3d9.lenientClear",                "True" },
+    }} },
+    /* Anarchy Online                             */
+    { R"(\\anarchyonline\.exe$)", {{
+      { "d3d9.memoryTrackTest",             "True" },
+    }} },
+    /* Borderlands 2 and The Pre Sequel!           */
+    { R"(\\Borderlands(2|PreSequel)\.exe$)", {{
+      { "d3d9.lenientClear",                "True" },
+      { "d3d9.supportDFFormats",            "False" },
+    }} },
+    /* Borderlands                                */
+    { R"(\\Borderlands\.exe$)", {{
+      { "d3d9.lenientClear",                "True" },
+    }} },
+    /* Gothic 3                                   */
+    { R"(\\Gothic(3|3Final| III Forsaken Gods)\.exe$)", {{
+      { "d3d9.allowLockFlagReadonly",       "False" },
+      { "d3d9.supportDFFormats",            "False" },
+    }} },
+    /* Risen                                      */
+    { R"(\\Risen[23]?\.exe$)", {{
+      { "d3d9.allowLockFlagReadonly",       "False" },
+      { "d3d9.invariantPosition",           "True" },
+    }} },
+    /* Nostale                                    */
+    { R"(\\NostaleClientX\.exe$)", {{
+      { "d3d9.allowLockFlagReadonly",       "False" },
+    }} },
+    /* Sonic Adventure 2                          */
+    { R"(\\Sonic Adventure 2\\(launcher|sonic2app)\.exe$)", {{
+      { "d3d9.floatEmulation",              "False" },
+    }} },
+    /* The Sims 2,
+       Body Shop,
+       The Sims Life Stories,
+       The Sims Pet Stories,
+       and The Sims Castaway Stories             */
+    { R"(\\(Sims2.*|TS2BodyShop|SimsLS|SimsPS|SimsCS)\.exe$)", {{
+      { "d3d9.customVendorId",              "10de" },
+      { "d3d9.customDeviceId",              "0091" },
+      { "d3d9.customDeviceDesc",            "GeForce 7800 GTX" },
+      { "d3d9.disableA8RT",                 "True" },
+      { "d3d9.supportX4R4G4B4",             "False" },
+      { "d3d9.maxAvailableMemory",          "2048" },
+      { "d3d9.memoryTrackTest",             "True" },
+       // The Sims 2 will try to upload 1024 constants
+       // every frame otherwise, which it never uses
+       // causing a massive discard + upload.
+      { "d3d9.swvpFloatCount",              "384" },
+      { "d3d9.swvpIntCount",                "16" },
+      { "d3d9.swvpBoolCount",               "16" },
+    }} },
+    /* Dead Space uses the a NULL render target instead
+       of a 1x1 one if DF24 is NOT supported      */
+    { R"(\\Dead Space\.exe$)", {{
+      { "d3d9.supportDFFormats",                 "False" },
+    }} },
+    /* Burnout Paradise                           */
+    { R"(\\BurnoutParadise\.exe$)", {{
+      { "d3d9.allowLockFlagReadonly",       "False" },
+    }} },
+    /* Halo 2                                     */
+    { R"(\\halo2\.exe$)", {{
+      { "d3d9.invariantPosition",           "True" },
+    }} },
+    /* Halo CE/HaloPC                             */
+    { R"(\\halo(ce)?\.exe$)", {{
+      { "d3d9.invariantPosition",           "True" },
+      // Game enables minor decal layering fixes
+      // specifically when it detects AMD.
+      // Avoids chip being detected as unsupported
+      // when on intel. Avoids possible path towards
+      // invalid texture addressing methods.
+      { "d3d9.customVendorId",              "1002" },
+      // Avoids card not recognized error.
+      // Keeps game's rendering methods consistent
+      // for optimal compatibility.
+      { "d3d9.customDeviceId",              "4172" },
+      // The game uses incorrect sampler types in
+      // the shaders for glass rendering which
+      // breaks it on native + us if we don't
+      // spec-constantly chose the sampler type
+      // automagically.
+      { "d3d9.forceSamplerTypeSpecConstants", "True" },
+    }} },
+    /* Counter Strike: Global Offensive
+       Needs NVAPI to avoid a forced AO + Smoke
+       exploit so we must force AMD vendor ID.    */
+    { R"(\\csgo\.exe$)", {{
+      { "d3d9.customVendorId",              "1002" },
+    }} },
+    /* Vampire - The Masquerade Bloodlines        */
+    { R"(\\vampire\.exe$)", {{
+      { "d3d9.deferSurfaceCreation",        "True" },
+      { "d3d9.memoryTrackTest",             "True" },
+      { "d3d9.maxAvailableMemory",          "1024" },
+    }} },
+    /* Senran Kagura Shinovi Versus               */
+    { R"(\\SKShinoviVersus\.exe$)", {{
+      { "d3d9.forceAspectRatio",            "16:9" },
+    }} },
+    /* Metal Slug X                               */
+    { R"(\\mslugx\.exe$)", {{
+      { "d3d9.supportD32",                  "False" },
+    }} },
+    /* Skyrim (NVAPI)                             */
+    { R"(\\TESV\.exe$)", {{
+      { "d3d9.customVendorId",              "1002" },
+    }} },
+    /* RTHDRIBL Demo                              
+       Uses DONOTWAIT after GetRenderTargetData
+       then goes into an infinite loop if it gets
+       D3DERR_WASSTILLDRAWING.
+       This is a better solution than penalizing
+       other apps that use this properly.         */
+    { R"(\\rthdribl\.exe$)", {{
+      { "d3d9.allowDoNotWait",              "False" },
+    }} },
+    /* Hyperdimension Neptunia U: Action Unleashed */
+    { R"(\\Neptunia\.exe$)", {{
+      { "d3d9.forceAspectRatio",            "16:9" },
+    }} },
+    /* D&D - The Temple Of Elemental Evil          */
+    { R"(\\ToEE\.exe$)", {{
+      { "d3d9.allowDiscard",                "False" },
+    }} },
+    /* ZUSI 3 - Aerosoft Edition                  */
+    { R"(\\ZusiSim\.exe$)", {{
+      { "d3d9.noExplicitFrontBuffer",       "True" },
+    }} },
+    /* GTA IV (NVAPI)                             */
+    { R"(\\GTAIV\.exe$)", {{
+      { "d3d9.customVendorId",              "1002" },
+    }} },
+    /* Battlefield 2 (bad z-pass)                 */
+    { R"(\\BF2\.exe$)", {{
+      { "d3d9.longMad",                     "True" },
+      { "d3d9.invariantPosition",           "True" },
+    }} },
+    /* SpellForce 2 Series                        */
+    { R"(\\SpellForce2.*\.exe$)", {{
+      { "d3d9.forceSamplerTypeSpecConstants", "True" },
     }} },
   }};
 
@@ -206,9 +437,19 @@ namespace dxvk {
         return;
 
       // Extract the value
+      bool insideString = false;
       n = skipWhitespace(line, n + 1);
-      while (n < line.size() && !isWhitespace(line[n]))
-        value << line[n++];
+
+      while (n < line.size()) {
+        if (!insideString && isWhitespace(line[n]))
+          break;
+
+        if (line[n] == '"') {
+          insideString = !insideString;
+          n++;
+        } else
+          value << line[n++];
+      }
       
       if (ctx.active)
         config.setOption(key.str(), value.str());
@@ -317,11 +558,15 @@ namespace dxvk {
 
 
   Config Config::getAppConfig(const std::string& appName) {
-    auto appConfig = g_appDefaults.find(appName);
+    auto appConfig = std::find_if(g_appDefaults.begin(), g_appDefaults.end(),
+      [&appName] (const std::pair<const char*, Config>& pair) {
+        std::regex expr(pair.first, std::regex::extended | std::regex::icase);
+        return std::regex_search(appName, expr);
+      });
+    
     if (appConfig != g_appDefaults.end()) {
       // Inform the user that we loaded a default config
-      Logger::info(str::format("Found built-in config: ", appName));
-
+      Logger::info(str::format("Found built-in config:"));
       return appConfig->second;
     }
 
